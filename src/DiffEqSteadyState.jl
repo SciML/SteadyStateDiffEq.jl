@@ -1,5 +1,12 @@
 module DiffEqSteadyState
 
-# package code goes here
+using DiffEqBase, NLsolve
+
+import DiffEqBase: solve
+
+include("algorithms.jl")
+include("solve.jl")
+
+export SSRootfind
 
 end # module
