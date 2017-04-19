@@ -1,4 +1,4 @@
-using SteadyStateDiffEq, DiffEqBase, NLsolve
+using SteadyStateDiffEq, DiffEqBase, NLsolve, Sundials
 using Base.Test
 
 function f(t,u,du)
@@ -16,7 +16,13 @@ f(0,sol.u,du)
 
 prob = ODEProblem(f,u0,(0.0,1.0))
 prob = SteadyStateProblem(prob)
-sol = solve(prob,SSRootfind(nlsolve = (f,u0) -> NLsolve.nlsolve(f,u0,autodiff=true,method=:newton,iterations=Int(1e6))))
+sol = solve(prob,SSRootfind(nlsolve = (f,u0) -> (res=NLsolve.nlsolve(f,u0,autodiff=true,method=:newton,iterations=Int(1e6));res.zero) ))
+
+f(0,sol.u,du)
+@ test du == [0,0]
+
+# Use Sundials
+sol = solve(prob,SSRootfind(nlsolve = Sundials.kinsol))
 
 f(0,sol.u,du)
 @ test du == [0,0]

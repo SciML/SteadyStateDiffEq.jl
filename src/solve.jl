@@ -27,8 +27,10 @@ function solve(prob::AbstractSteadyStateProblem,alg::SteadyStateDiffEqAlgorithm)
   # f = (u) -> (f!(du,u); du) # out-of-place version
 
   if typeof(alg) <: SSRootfind
-    res = alg.nlsolve(f!,u0)
-    build_solution(prob,alg,res.zero,res.residual_norm;retcode = :Success)
+    u = alg.nlsolve(f!,u0)
+    resid = similar(u)
+    f!(u,resid)
+    build_solution(prob,alg,u,resid;retcode = :Success)
   else
     error("Algorithm not recognized")
   end
