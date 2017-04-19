@@ -1,4 +1,4 @@
-using DiffEqSteadyState, DiffEqBase, NLsolve
+using SteadyStateDiffEq, DiffEqBase, NLsolve
 using Base.Test
 
 function f(t,u,du)
