@@ -1,4 +1,4 @@
-module DiffEqSteadyState
+module SteadyStateDiffEq
 
 using DiffEqBase, NLsolve
 
