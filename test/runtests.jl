@@ -19,10 +19,10 @@ prob = SteadyStateProblem(prob)
 sol = solve(prob,SSRootfind(nlsolve = (f,u0) -> (res=NLsolve.nlsolve(f,u0,autodiff=true,method=:newton,iterations=Int(1e6));res.zero) ))
 
 f(0,sol.u,du)
-@ test du == [0,0]
+@test du == [0,0]
 
 # Use Sundials
 sol = solve(prob,SSRootfind(nlsolve = Sundials.kinsol))
 
 f(0,sol.u,du)
-@ test du == [0,0]
+@test du == [0,0]
