@@ -2,6 +2,8 @@ module SteadyStateDiffEq
 
 using DiffEqBase, NLsolve
 
+using Compat
+
 import DiffEqBase: solve
 
 include("algorithms.jl")

@@ -1,4 +1,4 @@
-abstract SteadyStateDiffEqAlgorithm <: AbstractSteadyStateAlgorithm
+@compat abstract type SteadyStateDiffEqAlgorithm <: AbstractSteadyStateAlgorithm end
 
 immutable SSRootfind{F} <: SteadyStateDiffEqAlgorithm
   nlsolve::F
