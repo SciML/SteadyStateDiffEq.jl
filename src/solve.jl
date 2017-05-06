@@ -1,4 +1,4 @@
-function solve(prob::AbstractSteadyStateProblem,alg::SteadyStateDiffEqAlgorithm)
+function solve(prob::AbstractSteadyStateProblem,alg::SteadyStateDiffEqAlgorithm,args...;kwargs...)
 
   if prob.mass_matrix != I
     error("This solver is not able to use mass matrices.")
