@@ -2,7 +2,10 @@ __precompile__()
 
 module SteadyStateDiffEq
 
-using DiffEqBase, NLsolve
+using Reexport
+@reexport using DiffEqBase
+  
+using NLsolve
 
 using Compat
 
