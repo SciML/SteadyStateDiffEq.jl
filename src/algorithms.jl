@@ -3,4 +3,4 @@
 immutable SSRootfind{F} <: SteadyStateDiffEqAlgorithm
   nlsolve::F
 end
-SSRootfind(;nlsolve=(f,u0) -> (res=NLsolve.nlsolve(f,u0);res.zero)) = SSRootfind(nlsolve)
+SSRootfind(;nlsolve=(f,u0,abstol) -> (res=NLsolve.nlsolve(f,u0,ftol = abstol);res.zero)) = SSRootfind(nlsolve)
