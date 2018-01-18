@@ -22,7 +22,7 @@ f(0,sol.u,du)
 @test du == [0,0]
 
 # Use Sundials
-sol = solve(prob,SSRootfind(nlsolve = (f,u0,abstol) -> (res=Sundials.kinsol(f,u0);res.zero) ))
+sol = solve(prob,SSRootfind(nlsolve = (f,u0,abstol) -> (res=Sundials.kinsol(f,u0)) ))
 
 f(0,sol.u,du)
 @test du == [0,0]
