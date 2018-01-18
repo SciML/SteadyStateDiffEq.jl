@@ -7,7 +7,7 @@ function f(t,u,du)
 end
 u0 = zeros(2)
 prob = SteadyStateProblem(f,u0)
-
+abstol = 1e-8
 sol = solve(prob,SSRootfind())
 
 du = zeros(2)
@@ -16,7 +16,7 @@ f(0,sol.u,du)
 
 prob = ODEProblem(f,u0,(0.0,1.0))
 prob = SteadyStateProblem(prob)
-sol = solve(prob,SSRootfind(nlsolve = (f,u0) -> (res=NLsolve.nlsolve(f,u0,autodiff=true,method=:newton,iterations=Int(1e6));res.zero) ))
+sol = solve(prob,SSRootfind(nlsolve = (f,u0,abstol) -> (res=NLsolve.nlsolve(f,u0,autodiff=true,method=:newton,iterations=Int(1e6),ftol=abstol);res.zero) ))
 
 f(0,sol.u,du)
 @test du == [0,0]
