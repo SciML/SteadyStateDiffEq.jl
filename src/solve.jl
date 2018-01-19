@@ -1,4 +1,4 @@
-function solve(prob::AbstractSteadyStateProblem,alg::SteadyStateDiffEqAlgorithm,args...;kwargs...)
+function solve(prob::AbstractSteadyStateProblem,alg::SteadyStateDiffEqAlgorithm,args...;abstol=1e-8,kwargs...)
 
   if prob.mass_matrix != I
     error("This solver is not able to use mass matrices.")
@@ -27,7 +27,7 @@ function solve(prob::AbstractSteadyStateProblem,alg::SteadyStateDiffEqAlgorithm,
   # f = (u) -> (f!(du,u); du) # out-of-place version
 
   if typeof(alg) <: SSRootfind
-    u = alg.nlsolve(f!,u0)
+    u = alg.nlsolve(f!,u0,abstol)
     resid = similar(u)
     f!(u,resid)
     build_solution(prob,alg,u,resid;retcode = :Success)
