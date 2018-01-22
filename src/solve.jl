@@ -11,16 +11,18 @@ function solve(prob::AbstractSteadyStateProblem,alg::SteadyStateDiffEqAlgorithm,
   end
 
   sizeu = size(prob.u0)
+  p = prob.p
 
   if !isinplace(prob) && (typeof(prob.u0)<:AbstractVector || typeof(prob.u0)<:Number)
-    f! = (u,du) -> (du[:] = prob.f(0, u); nothing)
+    f! = (du,u) -> (du[:] = prob.f(u,p,0); nothing)
   elseif !isinplace(prob) && typeof(prob.u0)<:AbstractArray
-    f! = (u,du) -> (du[:] = vec(prob.f(0, reshape(u, sizeu))); nothing)
+    f! = (du,u) -> (du[:] = vec(prob.f(reshape(u, sizeu),p,0)); nothing)
   elseif typeof(prob.u0)<:AbstractVector
-    f! = (u,du) -> (prob.f(0, u, du); nothing)
+    f! = (du,u) -> (prob.f(du,u,p,0); nothing)
   else # Then it's an in-place function on an abstract array
-    f! = (u,du) -> (prob.f(0, reshape(u, sizeu),reshape(du, sizeu));
-                    u = vec(u); du=vec(du); nothing)
+    f! = (du,u) -> (prob.f(reshape(du, sizeu),
+                    reshape(u, sizeu),p,0);
+                    du=vec(du); nothing)
   end
 
   # du = similar(u)
