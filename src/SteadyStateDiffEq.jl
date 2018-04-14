@@ -4,8 +4,8 @@ module SteadyStateDiffEq
 
 using Reexport
 @reexport using DiffEqBase
-  
-using NLsolve
+
+using NLsolve, DiffEqCallbacks
 
 using Compat
 
@@ -14,6 +14,6 @@ import DiffEqBase: solve
 include("algorithms.jl")
 include("solve.jl")
 
-export SSRootfind
+export SSRootfind, DynamicSS
 
 end # module
