@@ -37,3 +37,10 @@ function solve(prob::AbstractSteadyStateProblem,alg::SteadyStateDiffEqAlgorithm,
     error("Algorithm not recognized")
   end
 end
+
+function solve(prob::AbstractSteadyStateProblem,alg::DynamicSS,args...;kwargs...)
+  _prob = ODEProblem(prob.f,prob.u0,(0.0,Inf),prob.p,
+                   mass_matrix=prob.mass_matrix,
+                   jac_prototype=prob.jac_prototype)
+  solve(_prob,alg.alg,args...;kwargs...,callback=TerminateSteadyState(alg.abstol,alg.reltol))
+end
