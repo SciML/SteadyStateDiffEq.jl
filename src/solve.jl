@@ -1,4 +1,6 @@
-function solve(prob::AbstractSteadyStateProblem,alg::SteadyStateDiffEqAlgorithm,args...;abstol=1e-8,kwargs...)
+function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
+                            alg::SteadyStateDiffEqAlgorithm,args...;
+                            abstol=1e-8,kwargs...)
 
   if prob.mass_matrix != I
     error("This solver is not able to use mass matrices.")
@@ -32,15 +34,17 @@ function solve(prob::AbstractSteadyStateProblem,alg::SteadyStateDiffEqAlgorithm,
     u = alg.nlsolve(f!,u0,abstol)
     resid = similar(u)
     f!(resid,u)
-    build_solution(prob,alg,u,resid;retcode = :Success)
+    DiffEqBase.build_solution(prob,alg,u,resid;retcode = :Success)
   else
     error("Algorithm not recognized")
   end
 end
 
-function solve(prob::AbstractSteadyStateProblem,alg::DynamicSS,args...;kwargs...)
-  _prob = ODEProblem(prob.f,prob.u0,(0.0,Inf),prob.p,
-                   mass_matrix=prob.mass_matrix,
-                   jac_prototype=prob.jac_prototype)
-  solve(_prob,alg.alg,args...;kwargs...,callback=TerminateSteadyState(alg.abstol,alg.reltol))
+function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
+                            alg::DynamicSS,args...;kwargs...)
+
+  _prob = remake(prob;tspan=(0.0,Inf))
+
+  solve(_prob,alg.alg,args...;kwargs...,
+        callback=TerminateSteadyState(alg.abstol,alg.reltol))
 end
