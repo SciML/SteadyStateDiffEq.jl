@@ -1,4 +1,4 @@
-abstract type SteadyStateDiffEqAlgorithm <: AbstractSteadyStateAlgorithm end
+abstract type SteadyStateDiffEqAlgorithm <: DiffEqBase.AbstractSteadyStateAlgorithm end
 
 struct SSRootfind{F} <: SteadyStateDiffEqAlgorithm
   nlsolve::F
