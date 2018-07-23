@@ -43,8 +43,9 @@ end
 function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
                             alg::DynamicSS,args...;kwargs...)
 
-  _prob = remake(prob;tspan=(0.0,Inf))
-
+  _prob = ODEProblem(ODEFunction{DiffEqBase.isinplace(prob)}(prob.f),
+                                    prob.u0,(0.0,Inf),prob.p,
+                                      prob.mass_matrix)
   solve(_prob,alg.alg,args...;kwargs...,
         callback=TerminateSteadyState(alg.abstol,alg.reltol))
 end
