@@ -2,7 +2,7 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
                             alg::SteadyStateDiffEqAlgorithm,args...;
                             abstol=1e-8,kwargs...)
 
-  if prob.mass_matrix != I
+  if prob.f.mass_matrix != I
     error("This solver is not able to use mass matrices.")
   end
 
@@ -16,14 +16,14 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
   p = prob.p
 
   if !isinplace(prob) && (typeof(prob.u0)<:AbstractVector || typeof(prob.u0)<:Number)
-    f! = (du,u) -> (du[:] = prob.f(u,p,0); nothing)
+    f! = (du,u) -> (du[:] = prob.f(u,p,Inf); nothing)
   elseif !isinplace(prob) && typeof(prob.u0)<:AbstractArray
-    f! = (du,u) -> (du[:] = vec(prob.f(reshape(u, sizeu),p,0)); nothing)
+    f! = (du,u) -> (du[:] = vec(prob.f(reshape(u, sizeu),p,Inf)); nothing)
   elseif typeof(prob.u0)<:AbstractVector
-    f! = (du,u) -> (prob.f(du,u,p,0); nothing)
+    f! = (du,u) -> (prob.f(du,u,p,Inf); nothing)
   else # Then it's an in-place function on an abstract array
     f! = (du,u) -> (prob.f(reshape(du, sizeu),
-                    reshape(u, sizeu),p,0);
+                    reshape(u, sizeu),p,Inf);
                     du=vec(du); nothing)
   end
 
@@ -43,9 +43,7 @@ end
 function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
                             alg::DynamicSS,args...;kwargs...)
 
-  _prob = ODEProblem(ODEFunction{DiffEqBase.isinplace(prob)}(prob.f),
-                                    prob.u0,(0.0,Inf),prob.p,
-                                      prob.mass_matrix)
+  _prob = ODEProblem(prob.f,prob.u0,(0.0,Inf),prob.p)
   solve(_prob,alg.alg,args...;kwargs...,
         callback=TerminateSteadyState(alg.abstol,alg.reltol))
 end
