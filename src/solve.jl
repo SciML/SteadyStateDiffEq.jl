@@ -43,7 +43,7 @@ end
 function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
                             alg::DynamicSS,args...;kwargs...)
 
-  tspan = alg.tspan isa Tuple ? alg.tspan : (0.0, alg.tspan)
+  tspan = alg.tspan isa Tuple ? alg.tspan : (zero(alg.tspan), alg.tspan)
   _prob = ODEProblem(prob.f,prob.u0,tspan,prob.p)
   sol = solve(_prob,alg.alg,args...;kwargs...,
               callback=TerminateSteadyState(alg.abstol,alg.reltol))
