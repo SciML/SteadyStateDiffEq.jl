@@ -47,7 +47,7 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
   _prob = ODEProblem(prob.f,prob.u0,tspan,prob.p)
   sol = solve(_prob,alg.alg,args...;kwargs...,
               callback=TerminateSteadyState(alg.abstol,alg.reltol))
-  if sol.t[end] ≈ _prob.tspan[end]
+  if sol.t[end] == _prob.tspan[end]
     sol = DiffEqBase.solution_new_retcode(sol, :Failure)
   end
   sol
