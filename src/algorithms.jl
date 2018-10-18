@@ -13,3 +13,6 @@ struct DynamicSS{A,AT,RT,TS} <: SteadyStateDiffEqAlgorithm
 end
 DynamicSS(alg; abstol = 1e-8, reltol = 1e-6, tspan = Inf) =
   DynamicSS(alg, abstol, reltol, tspan)
+
+# Backward compatibility:
+DynamicSS(alg, abstol, reltol) = DynamicSS(alg; abstol=abstol, reltol=reltol)
