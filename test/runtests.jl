@@ -26,7 +26,7 @@ f(du,sol.u,nothing,0)
 
 # Use Sundials
 sol = solve(prob,SSRootfind(nlsolve = (f,u0,abstol) -> (res=Sundials.kinsol(f,u0)) ))
-@test sol.retcode == :Terminated
+@test sol.retcode == :Success
 f(du,sol.u,nothing,0)
 @test du == [0,0]
 
