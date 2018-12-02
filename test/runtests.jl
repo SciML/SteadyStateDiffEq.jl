@@ -19,7 +19,7 @@ f(du,sol.u,nothing,0)
 prob = ODEProblem(f,u0,(0.0,1.0))
 prob = SteadyStateProblem(prob)
 sol = solve(prob,SSRootfind(nlsolve = (f,u0,abstol) -> (res=NLsolve.nlsolve(f,u0,autodiff=:forward,method=:newton,iterations=Int(1e6),ftol=abstol);res.zero) ))
-@test sol.retcode == :Terminated
+@test sol.retcode == :Success
 
 f(du,sol.u,nothing,0)
 @test du == [0,0]
