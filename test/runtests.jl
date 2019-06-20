@@ -41,7 +41,7 @@ sol = solve(prob,DynamicSS(Rodas5(),tspan=1e-3))
 @test sol.retcode != :Terminated
 
 sol = solve(prob,DynamicSS(CVODE_BDF()),dt=1.0)
-@test sol.retcode == :Success
+@test sol.retcode == :Terminated
 
 f(du,sol.u[end],p,0)
 @test du ≈ [0,0] atol = 1e-6
