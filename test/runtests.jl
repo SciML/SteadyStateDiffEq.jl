@@ -32,16 +32,16 @@ f(du,sol.u,nothing,0)
 
 using OrdinaryDiffEq
 sol = solve(prob,DynamicSS(Rodas5()))
-@test sol.retcode == :Terminated
+@test sol.retcode == :Success
 
 f(du,sol.u[end],p,0)
 @test du ≈ [0,0] atol = 1e-7
 
 sol = solve(prob,DynamicSS(Rodas5(),tspan=1e-3))
-@test sol.retcode != :Terminated
+@test sol.retcode != :Success
 
 sol = solve(prob,DynamicSS(CVODE_BDF()),dt=1.0)
-@test sol.retcode == :Terminated
+@test sol.retcode == :Success
 
 f(du,sol.u[end],p,0)
 @test du ≈ [0,0] atol = 1e-6
