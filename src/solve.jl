@@ -49,19 +49,18 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
   sol = solve(_prob,alg.alg,args...;kwargs...,
               callback=TerminateSteadyState(alg.abstol,alg.reltol),
               save_everystep=save_everystep,save_start=save_start)
-  if sol.t[end] == _prob.tspan[end]
-    sol = DiffEqBase.solution_new_retcode(sol, :Failure)
-  elseif sol.retcode == :Terminated
-    if isinplace(prob)
-      du = similar(sol.u[end])
-      prob.f(du, sol.u[end], prob.p, sol.t[end])
-    else
-      du = prob.f(sol.u[end], prob.p, sol.t[end])
-    end
-    if all(abs(d) <= abstol || abs(d) <= reltol*abs(u) for (d,abstol, reltol, u) =
-      zip(du, Iterators.cycle(alg.abstol), Iterators.cycle(alg.reltol), sol.u[end]))
-      sol = DiffEqBase.solution_new_retcode(sol, :Success)
-    end
+  if isinplace(prob)
+    du = similar(sol.u[end])
+    prob.f(du, sol.u[end], prob.p, sol.t[end])
+  else
+    du = prob.f(sol.u[end], prob.p, sol.t[end])
   end
-  sol
+  if sol.retcode == :Terminated && all(abs(d) <= abstol ||
+      abs(d) <= reltol*abs(u) for (d,abstol, reltol, u) in
+      zip(du, Iterators.cycle(alg.abstol), Iterators.cycle(alg.reltol), sol.u[end]))
+    _sol = DiffEqBase.build_solution(prob,alg,sol.u[end],du;retcode = :Success)
+  else
+    _sol = DiffEqBase.build_solution(prob,alg,sol.u[end],du;retcode = :Failure)
+  end
+  _sol
 end
