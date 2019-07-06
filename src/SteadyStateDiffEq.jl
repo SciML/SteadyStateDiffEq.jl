@@ -1,5 +1,3 @@
-__precompile__()
-
 module SteadyStateDiffEq
 
 using Reexport
@@ -7,7 +5,6 @@ using Reexport
 
 using NLsolve, DiffEqCallbacks
 using LinearAlgebra
-using Compat
 
 include("algorithms.jl")
 include("solve.jl")
