@@ -2,8 +2,8 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
                             alg::SteadyStateDiffEqAlgorithm,args...;
                             abstol=1e-8,kwargs...)
 
-  if prob.f.mass_matrix != I
-    error("This solver is not able to use mass matrices.")
+  if det(prob.f.mass_matrix) == 0
+    error("This solver is not able to use singular mass matrices.")
   end
 
   if typeof(prob.u0) <: Number
