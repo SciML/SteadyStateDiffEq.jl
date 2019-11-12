@@ -7,7 +7,7 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
   mask = [!iszero(M[i,:]) for i in 1:size(M,1)] # Create a mask to filter out the algebraic parts
   M_rest = M[mask,mask] # Non-algebraic part
   
-  if rank(M_rest) < minimum(size(A)) 
+  if rank(M_rest) < minimum(size(M_rest)) 
     error("This solver is not able to use mass matrices, wich non-algebraic part is singular")
   end
 
