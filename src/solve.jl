@@ -2,8 +2,13 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
                             alg::SteadyStateDiffEqAlgorithm,args...;
                             abstol=1e-8,kwargs...)
 
-  if det(prob.f.mass_matrix) == 0
-    error("This solver is not able to use singular mass matrices.")
+  # test if the solver is applicable
+  M = prob.f.mass_matrix
+  mask = [!iszero(M[i,:]) for i in 1:size(M,1)] # Create a mask to filter out the algebraic parts
+  M_rest = M[mask,mask] # Non-algebraic part
+  
+  if rank(M_rest) < minimum(size(A)) 
+    error("This solver is not able to use mass matrices, wich non-algebraic part is singular")
   end
 
   if typeof(prob.u0) <: Number
