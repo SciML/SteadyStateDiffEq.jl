@@ -8,7 +8,7 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
   M_rest = M[mask,mask] # Non-algebraic part
   
   if rank(M_rest) < minimum(size(M_rest)) 
-    error("This solver is not able to use mass matrices, wich non-algebraic part is singular")
+    error("This solver is not able to use mass matrices for which the non-algebraic part is singular")
   end
 
   if typeof(prob.u0) <: Number
