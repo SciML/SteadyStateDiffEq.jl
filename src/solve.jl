@@ -2,7 +2,7 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
                             alg::SteadyStateDiffEqAlgorithm,args...;
                             abstol=1e-8,kwargs...)
 
-  if prob.f.mass_matrix !=I && rank(prob.f.mass_matrix) < minimum(size(prob.f.mass_matrix)) 
+  if prob.f.mass_matrix !== I && rank(prob.f.mass_matrix) < minimum(size(prob.f.mass_matrix)) 
     error("This solver is not able to use singular mass matrices")
   end
 
