@@ -2,10 +2,6 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
                             alg::SteadyStateDiffEqAlgorithm,args...;
                             abstol=1e-8,kwargs...)
 
-  if prob.f.mass_matrix != I
-    error("This solver is not able to use mass matrices.")
-  end
-
   if typeof(prob.u0) <: Number
     u0 = [prob.u0]
   else
