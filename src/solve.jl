@@ -11,16 +11,30 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
   sizeu = size(prob.u0)
   p = prob.p
 
-  if !isinplace(prob) && (typeof(prob.u0)<:AbstractVector || typeof(prob.u0)<:Number)
-    f! = (du,u) -> (du[:] = prob.f(u,p,Inf); nothing)
-  elseif !isinplace(prob) && typeof(prob.u0)<:AbstractArray
-    f! = (du,u) -> (du[:] = vec(prob.f(reshape(u, sizeu),p,Inf)); nothing)
-  elseif typeof(prob.u0)<:AbstractVector
-    f! = (du,u) -> (prob.f(du,u,p,Inf); nothing)
-  else # Then it's an in-place function on an abstract array
-    f! = (du,u) -> (prob.f(reshape(du, sizeu),
-                    reshape(u, sizeu),p,Inf);
-                    du=vec(du); nothing)
+  if typeof(prob) <: SteadyStateProblem
+    if !isinplace(prob) && (typeof(prob.u0)<:AbstractVector || typeof(prob.u0)<:Number)
+      f! = (du,u) -> (du[:] = prob.f(u,p,Inf); nothing)
+    elseif !isinplace(prob) && typeof(prob.u0)<:AbstractArray
+      f! = (du,u) -> (du[:] = vec(prob.f(reshape(u, sizeu),p,Inf)); nothing)
+    elseif typeof(prob.u0)<:AbstractVector
+      f! = (du,u) -> (prob.f(du,u,p,Inf); nothing)
+    else # Then it's an in-place function on an abstract array
+      f! = (du,u) -> (prob.f(reshape(du, sizeu),
+                      reshape(u, sizeu),p,Inf);
+                      du=vec(du); nothing)
+    end
+  elseif typeof(prob) <: NonlinearProblem
+    if !isinplace(prob) && (typeof(prob.u0)<:AbstractVector || typeof(prob.u0)<:Number)
+      f! = (du,u) -> (du[:] = prob.f(u,p); nothing)
+    elseif !isinplace(prob) && typeof(prob.u0)<:AbstractArray
+      f! = (du,u) -> (du[:] = vec(prob.f(reshape(u, sizeu),p)); nothing)
+    elseif typeof(prob.u0)<:AbstractVector
+      f! = (du,u) -> (prob.f(du,u,p); nothing)
+    else # Then it's an in-place function on an abstract array
+      f! = (du,u) -> (prob.f(reshape(du, sizeu),
+                      reshape(u, sizeu),p);
+                      du=vec(du); nothing)
+    end
   end
 
   # du = similar(u)
@@ -41,15 +55,25 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
                             save_start=false,kwargs...)
 
   tspan = alg.tspan isa Tuple ? alg.tspan : (zero(alg.tspan), alg.tspan)
-  _prob = ODEProblem(prob.f,prob.u0,tspan,prob.p)
+  if typeof(prob) <: SteadyStateProblem
+    f = prob.f
+  elseif typeof(prob) <: NonlinearProblem
+    if isinplace(prob)
+      f = (du,u,p,t) -> prob.f(du,u,p)
+    else
+      f = (u,p,t) -> prob.f(u,p)
+    end
+  end
+
+  _prob = ODEProblem(f,prob.u0,tspan,prob.p)
   sol = solve(_prob,alg.alg,args...;kwargs...,
               callback=TerminateSteadyState(alg.abstol,alg.reltol),
               save_everystep=save_everystep,save_start=save_start)
   if isinplace(prob)
     du = similar(sol.u[end])
-    prob.f(du, sol.u[end], prob.p, sol.t[end])
+    f(du, sol.u[end], prob.p, sol.t[end])
   else
-    du = prob.f(sol.u[end], prob.p, sol.t[end])
+    du = f(sol.u[end], prob.p, sol.t[end])
   end
   if sol.retcode == :Terminated && all(abs(d) <= abstol ||
       abs(d) <= reltol*abs(u) for (d,abstol, reltol, u) in
