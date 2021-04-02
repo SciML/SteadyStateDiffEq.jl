@@ -75,9 +75,11 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
   else
     du = f(sol.u[end], prob.p, sol.t[end])
   end
-  if sol.retcode == :Terminated && all(abs(d) <= abstol ||
-      abs(d) <= reltol*abs(u) for (d,abstol, reltol, u) in
-      zip(du, Iterators.cycle(alg.abstol), Iterators.cycle(alg.reltol), sol.u[end]))
+  array_condition() = all(abs(d) <= abstol || abs(d) <= reltol*abs(u)
+                          for (d,abstol, reltol, u)
+                          in zip(du, Iterators.cycle(alg.abstol), Iterators.cycle(alg.reltol), sol.u[end]))
+  broadcast_condition() = all((abs.(du) .<= alg.abstol) .| (abs.(du) .<= alg.reltol .* abs.(sol.u[end])))
+  if sol.retcode == :Terminated && (typeof(sol.u[end]) <: Array ? array_condition() : broadcast_condition())
     _sol = DiffEqBase.build_solution(prob,alg,sol.u[end],du;retcode = :Success)
   else
     _sol = DiffEqBase.build_solution(prob,alg,sol.u[end],du;retcode = :Failure)
