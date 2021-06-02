@@ -45,3 +45,36 @@ sol = solve(prob,DynamicSS(CVODE_BDF()),dt=1.0)
 
 f(du,sol.u,p,0)
 @test du ≈ [0,0] atol = 1e-6
+
+# Float32
+u0 = [0.0f0, 0.0f0]
+
+function foop(u,p,t)
+  @test eltype(u) == eltype(u0)
+  dx = 2 - 2u[1]
+  dy = u[1] - 4u[2]
+  [dx,dy]
+end
+
+function fiip(du,u,p,t)
+  @test eltype(u) == eltype(u0)
+  du[1] = 2 - 2u[1]
+  du[2] = u[1] - 4u[2]
+end
+
+tspan = (0.0f0,1.0f0)
+proboop = SteadyStateProblem(foop,u0)
+prob = SteadyStateProblem(fiip,u0)
+
+sol = solve(proboop,DynamicSS(Tsit5(),tspan=1f-3))
+@test typeof(u0) == typeof(sol.u)
+proboop = SteadyStateProblem(ODEProblem(foop,u0,tspan))
+sol2 = solve(proboop,DynamicSS(Tsit5(),abstol=1e-4))
+@test typeof(u0) == typeof(sol2.u)
+
+
+sol = solve(prob,DynamicSS(Tsit5(),tspan=1f-3))
+@test typeof(u0) == typeof(sol.u)
+prob = SteadyStateProblem(ODEProblem(fiip,u0,tspan))
+sol2 = solve(prob,DynamicSS(Tsit5(),abstol=1e-4))
+@test typeof(u0) == typeof(sol2.u)
