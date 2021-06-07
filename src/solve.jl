@@ -54,7 +54,7 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
                             alg::DynamicSS,args...;save_everystep=false,
                             save_start=false,kwargs...)
 
-  tspan = alg.tspan isa Tuple ? alg.tspan : convert.(eltype(prob.u0),(zero(alg.tspan), alg.tspan))
+  tspan = alg.tspan isa Tuple ? alg.tspan : convert.(real(eltype(prob.u0)),(zero(alg.tspan), alg.tspan))
   if typeof(prob) <: SteadyStateProblem
     f = prob.f
   elseif typeof(prob) <: NonlinearProblem

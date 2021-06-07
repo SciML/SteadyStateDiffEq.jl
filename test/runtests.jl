@@ -78,3 +78,15 @@ sol = solve(prob,DynamicSS(Tsit5(),tspan=1f-3))
 prob = SteadyStateProblem(ODEProblem(fiip,u0,tspan))
 sol2 = solve(prob,DynamicSS(Tsit5(),abstol=1e-4))
 @test typeof(u0) == typeof(sol2.u)
+
+# Complex u
+u0 = [1.0im]
+
+function fcomplex(du,u,p,t)
+    du[1] = (0.1im - 1)*u[1]
+end
+
+prob = SteadyStateProblem(ODEProblem(fcomplex,u0,(0.0,1.0)))
+sol = solve(prob,DynamicSS(Tsit5()))
+@test sol.retcode == :Success
+@test abs(sol.u[end]) < 1e-8
