@@ -41,7 +41,7 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
   # f = (u) -> (f!(du,u); du) # out-of-place version
 
   if typeof(alg) <: SSRootfind
-    u = alg.nlsolve(f!,u0,abstol)
+    u = reshape(alg.nlsolve(f!,u0,abstol), sizeu)
     resid = similar(u)
     f!(resid,u)
     DiffEqBase.build_solution(prob,alg,u,resid;retcode = :Success)
