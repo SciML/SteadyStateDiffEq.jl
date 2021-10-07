@@ -45,7 +45,7 @@ sol = solve(prob,DynamicSS(CVODE_BDF()),dt=1.0)
 
 # scalar save_idxs
 scalar_sol = solve(prob,DynamicSS(CVODE_BDF()),dt=1.0,save_idxs=1)
-@test scalar_sol ≈ sol[1]
+@test scalar_sol[1] ≈ sol[1]
 
 f(du,sol.u,p,0)
 @test du ≈ [0,0] atol = 1e-6
