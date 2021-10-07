@@ -52,7 +52,7 @@ end
 
 function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
                             alg::DynamicSS,args...;save_everystep=false,
-                            save_start=false,kwargs...)
+                            save_start=false,save_idxs = nothing, kwargs...)
 
   tspan = alg.tspan isa Tuple ? alg.tspan : convert.(real(eltype(prob.u0)),(zero(alg.tspan), alg.tspan))
   if typeof(prob) <: SteadyStateProblem
@@ -79,10 +79,18 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
                           for (d,abstol, reltol, u)
                           in zip(du, Iterators.cycle(alg.abstol), Iterators.cycle(alg.reltol), sol.u[end]))
   broadcast_condition() = all((abs.(du) .<= alg.abstol) .| (abs.(du) .<= alg.reltol .* abs.(sol.u[end])))
-  if sol.retcode == :Terminated && (typeof(sol.u[end]) <: Array ? array_condition() : broadcast_condition())
-    _sol = DiffEqBase.build_solution(prob,alg,sol.u[end],du;retcode = :Success)
+
+  if save_idxs !== nothing
+    u = sol.u[end][save_idxs]
+    du = du[save_idxs]
   else
-    _sol = DiffEqBase.build_solution(prob,alg,sol.u[end],du;retcode = :Failure)
+    u = sol.u[end]
+  end
+
+  if sol.retcode == :Terminated && (typeof(sol.u[end]) <: Array ? array_condition() : broadcast_condition())
+    _sol = DiffEqBase.build_solution(prob,alg,u,du;retcode = :Success)
+  else
+    _sol = DiffEqBase.build_solution(prob,alg,u,du;retcode = :Failure)
   end
   _sol
 end
