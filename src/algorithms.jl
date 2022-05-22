@@ -16,3 +16,6 @@ DynamicSS(alg; abstol = 1e-8, reltol = 1e-6, tspan = Inf) =
 
 # Backward compatibility:
 DynamicSS(alg, abstol, reltol) = DynamicSS(alg; abstol=abstol, reltol=reltol)
+
+SciMLBase.isautodifferentiable(alg::SSRootfind) = true
+SciMLBase.isautodifferentiable(alg::DynamicSS) = SciMLBase.isautodifferentiable(alg.alg)
