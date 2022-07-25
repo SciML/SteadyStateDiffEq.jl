@@ -44,10 +44,11 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
     # f = (u) -> (f!(du,u); du) # out-of-place version
 
     if typeof(alg) <: SSRootfind
-        u = reshape(alg.nlsolve(f!, u0, abstol), sizeu)
+        original = alg.nlsolve(f!, u0, abstol)
+        u = reshape(original.zero, sizeu)
         resid = similar(u)
         f!(resid, u)
-        DiffEqBase.build_solution(prob, alg, u, resid; retcode = :Success)
+        DiffEqBase.build_solution(prob, alg, u, resid; retcode = :Success, original = original)
     else
         error("Algorithm not recognized")
     end
