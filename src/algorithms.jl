@@ -4,9 +4,8 @@ struct SSRootfind{F} <: SteadyStateDiffEqAlgorithm
     nlsolve::F
 end
 function SSRootfind(;
-                    nlsolve = (f, u0, abstol) -> (res = NLsolve.nlsolve(f, u0,
-                                                                        ftol = abstol);
-                                                  res.zero))
+                    nlsolve = (f, u0, abstol) -> (NLsolve.nlsolve(f, u0,
+                                                                        ftol = abstol)))                               
     SSRootfind(nlsolve)
 end
 
