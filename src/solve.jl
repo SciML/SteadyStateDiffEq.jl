@@ -49,13 +49,13 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
             u = reshape(original.zero, sizeu)
             resid = similar(u)
             f!(resid, u)
-            DiffEqBase.build_solution(prob, alg, u, resid; retcode = :Success,
+            DiffEqBase.build_solution(prob, alg, u, resid; retcode = ReturnCode.Success,
                                       original = original)
         else
             u = reshape(original, sizeu)
             resid = similar(u)
             f!(resid, u)
-            DiffEqBase.build_solution(prob, alg, u, resid; retcode = :Success)
+            DiffEqBase.build_solution(prob, alg, u, resid; retcode = ReturnCode.Success)
         end
     else
         error("Algorithm not recognized")
@@ -104,11 +104,11 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
         u = sol.u[end]
     end
 
-    if sol.retcode == :Terminated &&
+    if sol.retcode == ReturnCode.Terminated &&
        (typeof(sol.u[end]) <: Array ? array_condition() : broadcast_condition())
-        _sol = DiffEqBase.build_solution(prob, alg, u, du; retcode = :Success)
+        _sol = DiffEqBase.build_solution(prob, alg, u, du; retcode = ReturnCode.Success)
     else
-        _sol = DiffEqBase.build_solution(prob, alg, u, du; retcode = :Failure)
+        _sol = DiffEqBase.build_solution(prob, alg, u, du; retcode = ReturnCode.Failure)
     end
     _sol
 end
