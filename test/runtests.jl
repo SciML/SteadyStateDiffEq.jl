@@ -9,7 +9,7 @@ u0 = zeros(2)
 prob = SteadyStateProblem(f, u0)
 abstol = 1e-8
 sol = solve(prob, SSRootfind())
-@test sol.retcode == :Success
+@test sol.retcode == ReturnCode.Success
 p = nothing
 
 du = zeros(2)
@@ -24,7 +24,7 @@ sol = solve(prob,
                                                                      method = :newton,
                                                                      iterations = Int(1e6),
                                                                      ftol = abstol))))
-@test sol.retcode == :Success
+@test sol.retcode == ReturnCode.Success
 @test typeof(sol.original) <: NLsolve.SolverResults
 
 f(du, sol.u, nothing, 0)
@@ -32,22 +32,22 @@ f(du, sol.u, nothing, 0)
 
 # Use Sundials
 sol = solve(prob, SSRootfind(nlsolve = (f, u0, abstol) -> (res = Sundials.kinsol(f, u0))))
-@test sol.retcode == :Success
+@test sol.retcode == ReturnCode.Success
 f(du, sol.u, nothing, 0)
 @test du == [0, 0]
 
 using OrdinaryDiffEq
 sol = solve(prob, DynamicSS(Rodas5()))
-@test sol.retcode == :Success
+@test sol.retcode == ReturnCode.Success
 
 f(du, sol.u, p, 0)
 @test du≈[0, 0] atol=1e-7
 
 sol = solve(prob, DynamicSS(Rodas5(), tspan = 1e-3))
-@test sol.retcode != :Success
+@test sol.retcode != ReturnCode.Success
 
 sol = solve(prob, DynamicSS(CVODE_BDF()), dt = 1.0)
-@test sol.retcode == :Success
+@test sol.retcode == ReturnCode.Success
 
 # scalar save_idxs
 scalar_sol = solve(prob, DynamicSS(CVODE_BDF()), dt = 1.0, save_idxs = 1)
@@ -97,5 +97,5 @@ end
 
 prob = SteadyStateProblem(ODEProblem(fcomplex, u0, (0.0, 1.0)))
 sol = solve(prob, DynamicSS(Tsit5()))
-@test sol.retcode == :Success
+@test sol.retcode == ReturnCode.Success
 @test abs(sol.u[end]) < 1e-8
