@@ -9,6 +9,29 @@ function SSRootfind(;
     SSRootfind(nlsolve)
 end
 
+"""
+`DynamicSS(alg;abstol=1e-8,reltol=1e-6,tspan=Inf)`
+
+Requires that an ODE algorithm is given as the first argument.  The absolute and
+relative tolerances specify the termination conditions on the derivative's closeness to
+zero.  This internally uses the `TerminateSteadyState` callback from the Callback Library.
+The simulated time for which given ODE is solved can be limited by `tspan`.  If `tspan` is
+a number, it is equivalent to passing `(zero(tspan), tspan)`.
+
+Example usage:
+
+```julia
+using SteadyStateDiffEq, OrdinaryDiffEq
+sol = solve(prob,DynamicSS(Tsit5()))
+
+using Sundials
+sol = solve(prob,DynamicSS(CVODE_BDF()),dt=1.0)
+```
+
+!!! note
+
+    If you use `CVODE_BDF` you may need to give a starting `dt` via `dt=....`.*
+"""
 struct DynamicSS{A, AT, RT, TS} <: SteadyStateDiffEqAlgorithm
     alg::A
     abstol::AT

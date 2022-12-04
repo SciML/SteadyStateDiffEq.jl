@@ -1,6 +1,6 @@
 name = "SteadyStateDiffEq"
 uuid = "9672c7b4-1e72-59bd-8a11-6ac3964bc41f"
-version = "1.10.0"
+version = "1.10.1"
 
 [deps]
 DiffEqBase = "2b5f629d-d688-5b77-993f-72d75c75574e"
