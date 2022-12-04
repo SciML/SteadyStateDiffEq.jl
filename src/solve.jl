@@ -1,6 +1,17 @@
 function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
                             alg::SteadyStateDiffEqAlgorithm, args...;
                             abstol = 1e-8, kwargs...)
+    @warn """
+    This method is deprecated in favor of using NonlinearSolve.jl. Note that an ODEProblem
+    can be converted into a steady state NonlinearProblem via
+    `NonlinearProblem(prob::ODEProblem)`. The algorithm `NLSolveJL` as part of the
+    SciMLNLSolve.jl set of nonlinear solvers for NonlinearSolve.jl is equivalent to
+    SteadyStateDiffEq.jl's default `SSRootfind` (with a few improvements).
+
+    See [the documentation of NonlinearSolve.jl](https://docs.sciml.ai/NonlinearSolve/stable/)
+    for more details.
+    """
+
     if typeof(prob.u0) <: Number
         u0 = [prob.u0]
     else
