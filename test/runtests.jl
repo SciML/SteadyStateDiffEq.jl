@@ -99,3 +99,5 @@ prob = SteadyStateProblem(ODEProblem(fcomplex, u0, (0.0, 1.0)))
 sol = solve(prob, DynamicSS(Tsit5()))
 @test sol.retcode == ReturnCode.Success
 @test abs(sol.u[end]) < 1e-8
+
+include("autodiff.jl")
