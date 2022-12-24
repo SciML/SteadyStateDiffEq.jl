@@ -1,4 +1,4 @@
-function DiffEqBase.prepare_alg(alg::DynamicSS) 
+function DiffEqBase.prepare_alg(alg::DynamicSS)
     DynamicSS(DiffEqBase.prepare_alg(alg.alg), alg.abstol, alg.reltol, alg.tspan)
 end
 
@@ -81,7 +81,8 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
                             alg::DynamicSS, args...; save_everystep = false,
                             save_start = false, save_idxs = nothing, kwargs...)
     tspan = alg.tspan isa Tuple ? alg.tspan :
-            convert.(DiffEqBase.value(real(eltype(prob.u0))), (DiffEqBase.value(zero(alg.tspan)), alg.tspan))
+            convert.(DiffEqBase.value(real(eltype(prob.u0))),
+                     (DiffEqBase.value(zero(alg.tspan)), alg.tspan))
     if typeof(prob) <: SteadyStateProblem
         f = prob.f
     elseif typeof(prob) <: NonlinearProblem
