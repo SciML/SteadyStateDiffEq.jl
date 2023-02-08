@@ -6,6 +6,7 @@ using Reexport
 using NLsolve, DiffEqCallbacks
 using LinearAlgebra
 
+include("termination.jl")
 include("algorithms.jl")
 include("solve.jl")
 
