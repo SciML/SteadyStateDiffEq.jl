@@ -88,6 +88,27 @@ prob = SteadyStateProblem(ODEProblem(fiip, u0, tspan))
 sol2 = solve(prob, DynamicSS(Tsit5(), abstol = 1e-4))
 @test typeof(u0) == typeof(sol2.u)
 
+for mode in (:default, :norm, :rel, :rel_norm, :rel_safe, :rel_safe_best, :abs, :abs_norm,
+             :abs_safe, :abs_safe_best)
+    termination_condition = SteadyStateTerminationCriteria(mode; abstol = 1e-4,
+                                                           reltol = 1e-4)
+    sol = solve(prob,
+                DynamicSS(Tsit5(); abstol = 1e-4, reltol = 1e-4, termination_condition),
+                save_everystep = mode ∈ (:abs_safe_best, :rel_safe_best))
+
+    @show mode
+
+    @test sol.retcode == ReturnCode.Success
+    @test sol.u ≈ sol2.u
+
+    sol = solve(proboop,
+                DynamicSS(Tsit5(); abstol = 1e-4, reltol = 1e-4, termination_condition),
+                save_everystep = mode ∈ (:abs_safe_best, :rel_safe_best))
+
+    @test sol.retcode == ReturnCode.Success
+    @test sol.u ≈ sol2.u
+end
+
 # Complex u
 u0 = [1.0im]
 

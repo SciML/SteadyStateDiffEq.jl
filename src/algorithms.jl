@@ -10,7 +10,9 @@ function SSRootfind(;
 end
 
 """
-`DynamicSS(alg;abstol=1e-8,reltol=1e-6,tspan=Inf)`
+    DynamicSS(alg; abstol = 1e-8, reltol = 1e-6, tspan = Inf,
+              termination_condition = SteadyStateTerminationCriteria(:default; abstol,
+                                                                     reltol))
 
 Requires that an ODE algorithm is given as the first argument.  The absolute and
 relative tolerances specify the termination conditions on the derivative's closeness to
@@ -32,14 +34,19 @@ sol = solve(prob,DynamicSS(CVODE_BDF()),dt=1.0)
 
     If you use `CVODE_BDF` you may need to give a starting `dt` via `dt=....`.*
 """
-struct DynamicSS{A, AT, RT, TS} <: SteadyStateDiffEqAlgorithm
+struct DynamicSS{A, AT, RT, TS, TC <: SteadyStateTerminationCriteria} <:
+       SteadyStateDiffEqAlgorithm
     alg::A
     abstol::AT
     reltol::RT
     tspan::TS
+
+    termination_condition::TC
 end
-function DynamicSS(alg; abstol = 1e-8, reltol = 1e-6, tspan = Inf)
-    DynamicSS(alg, abstol, reltol, tspan)
+function DynamicSS(alg; abstol = 1e-8, reltol = 1e-6, tspan = Inf,
+                   termination_condition = SteadyStateTerminationCriteria(:default; abstol,
+                                                                          reltol))
+    DynamicSS(alg, abstol, reltol, tspan, termination_condition)
 end
 
 # Backward compatibility:

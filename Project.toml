@@ -5,15 +5,20 @@ version = "1.11.1"
 [deps]
 DiffEqBase = "2b5f629d-d688-5b77-993f-72d75c75574e"
 DiffEqCallbacks = "459566f4-90b8-5000-8ac3-15dfb0a30def"
+EnumX = "4e289a0a-7415-4d19-859d-a7e5c4648b56"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Markdown = "d6f4376e-aef5-505a-96c1-9c027394607a"
 NLsolve = "2774e3e8-f4cf-5e23-947b-6d7e65073b56"
 Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
+SciMLBase = "0bca4576-84f4-4d90-8ffe-ffa030f20462"
 
 [compat]
 DiffEqBase = "6"
 DiffEqCallbacks = "2.9"
+EnumX = "1"
 NLsolve = "4.2"
 Reexport = "0.2, 1.0"
+SciMLBase = "1.73"
 julia = "1.6"
 
 [extras]
