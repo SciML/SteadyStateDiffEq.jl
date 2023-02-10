@@ -95,12 +95,11 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
 
     mode = SciMLBase._unwrap_val(_get_termination_mode(alg.termination_condition))
 
-    if mode ∈ (:rel_safe_best, :abs_safe_best) && !save_everystep
+    if mode ∈ SAFE_BEST_TERMINATION_MODES && !save_everystep
         throw(ArgumentError("`save_everystep` must be `true` if using `$(mode)` termination condition."))
     end
 
-    storage = mode ∈ (:rel_safe, :rel_safe_best, :abs_safe, :abs_safe_best) ? Dict() :
-              nothing
+    storage = mode ∈ SAFE_TERMINATION_MODES ? Dict() : nothing
     callback = TerminateSteadyState(alg.termination_condition.abstol,
                                     alg.termination_condition.reltol,
                                     _get_termination_condition(alg.termination_condition,

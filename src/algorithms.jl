@@ -43,8 +43,7 @@ struct DynamicSS{A, AT, RT, TS, TC <: SteadyStateTerminationCriteria} <:
     termination_condition::TC
 end
 function DynamicSS(alg; abstol = 1e-8, reltol = 1e-6, tspan = Inf,
-                   termination_condition = SteadyStateTerminationCriteria(:default; abstol,
-                                                                          reltol))
+                   termination_condition = SteadyStateTerminationCriteria(; abstol, reltol))
     DynamicSS(alg, abstol, reltol, tspan, termination_condition)
 end
 

@@ -17,8 +17,36 @@ end
     Failure
 end
 
+@enumx SteadyStateTerminationMode begin
+    Default
+    Norm
+    Rel
+    RelNorm
+    Abs
+    AbsNorm
+    RelSafe
+    RelSafeBest
+    AbsSafe
+    AbsSafeBest
+end
+
+const BASIC_TERMINATION_MODES = (SteadyStateTerminationMode.Default,
+                                 SteadyStateTerminationMode.Norm,
+                                 SteadyStateTerminationMode.Rel,
+                                 SteadyStateTerminationMode.RelNorm,
+                                 SteadyStateTerminationMode.Abs,
+                                 SteadyStateTerminationMode.AbsNorm)
+
+const SAFE_TERMINATION_MODES = (SteadyStateTerminationMode.RelSafe,
+                                SteadyStateTerminationMode.RelSafeBest,
+                                SteadyStateTerminationMode.AbsSafe,
+                                SteadyStateTerminationMode.AbsSafeBest)
+
+const SAFE_BEST_TERMINATION_MODES = (SteadyStateTerminationMode.RelSafeBest,
+                                     SteadyStateTerminationMode.AbsSafeBest)
+
 @doc doc"""
-    SteadyStateTerminationCriteria(mode = :default; abstol::T = 1e-8,
+    SteadyStateTerminationCriteria(mode = SteadyStateTerminationMode.Default; abstol::T = 1e-8,
                                    reltol::T = 1e-6, protective_threshold = 1e3,
                                    patience_steps::Int = 30,
                                    patience_objective_multiplier = 3,
@@ -30,22 +58,22 @@ Define the termination criteria for the SteadyStateProblem.
 
 #### Termination on Absolute Tolerance
 
-  * `:abs`: Terminates if ``all \left( | \frac{\partial u}{\partial t} | \leq abstol \right)``
-  * `:abs_norm`: Terminates if ``\| \frac{\partial u}{\partial t} \| \leq abstol``
-  * `:abs_safe`: Essentially `abs_norm` + terminate if there has been no improvement for the last 30 steps + terminate if the solution blows up (diverges)
-  * `:abs_safe_best`: Same as `:abs_safe` but uses the best solution found so far, i.e. deviates only if the solution has not converged
+  * `SteadyStateTerminationMode.Abs`: Terminates if ``all \left( | \frac{\partial u}{\partial t} | \leq abstol \right)``
+  * `SteadyStateTerminationMode.AbsNorm`: Terminates if ``\| \frac{\partial u}{\partial t} \| \leq abstol``
+  * `SteadyStateTerminationMode.AbsSafe`: Essentially `abs_norm` + terminate if there has been no improvement for the last 30 steps + terminate if the solution blows up (diverges)
+  * `SteadyStateTerminationMode.AbsSafeBest`: Same as `SteadyStateTerminationMode.AbsSafe` but uses the best solution found so far, i.e. deviates only if the solution has not converged
 
 #### Termination on Relative Tolerance
 
-  * `:rel`: Terminates if ``all \left(| \frac{\partial u}{\partial t} | \leq reltol \times | u | \right)``
-  * `:rel_norm`: Terminates if ``\| \frac{\partial u}{\partial t} \| \leq reltol \times \| \frac{\partial u}{\partial t} + u \|``
-  * `:rel_safe`: Essentially `rel_norm` + terminate if there has been no improvement for the last 30 steps + terminate if the solution blows up (diverges)
-  * `:rel_safe_best`: Same as `:rel_safe` but uses the best solution found so far, i.e. deviates only if the solution has not converged
+  * `SteadyStateTerminationMode.Rel`: Terminates if ``all \left(| \frac{\partial u}{\partial t} | \leq reltol \times | u | \right)``
+  * `SteadyStateTerminationMode.RelNorm`: Terminates if ``\| \frac{\partial u}{\partial t} \| \leq reltol \times \| \frac{\partial u}{\partial t} + u \|``
+  * `SteadyStateTerminationMode.RelSafe`: Essentially `rel_norm` + terminate if there has been no improvement for the last 30 steps + terminate if the solution blows up (diverges)
+  * `SteadyStateTerminationMode.RelSafeBest`: Same as `SteadyStateTerminationMode.RelSafe` but uses the best solution found so far, i.e. deviates only if the solution has not converged
 
 #### Termination using both Absolute and Relative Tolerances
 
-  * `:norm`: Terminates if ``\| \frac{\partial u}{\partial t} \| \leq reltol \times \| \frac{\partial u}{\partial t} + u \|`` or ``\| \frac{\partial u}{\partial t} \| \leq abstol``
-  * `:default`: Check if all values of the derivative is close to zero wrt both relative and absolute tolerance. This is usable for small problems but doesn't scale well for neural networks.
+  * `SteadyStateTerminationMode.Norm`: Terminates if ``\| \frac{\partial u}{\partial t} \| \leq reltol \times \| \frac{\partial u}{\partial t} + u \|`` or ``\| \frac{\partial u}{\partial t} \| \leq abstol``
+  * `SteadyStateTerminationMode.Default`: Check if all values of the derivative is close to zero wrt both relative and absolute tolerance. This is usable for small problems but doesn't scale well for neural networks.
 
 ## General Arguments
 
@@ -69,20 +97,25 @@ end
 function Base.show(io::IO, s::SteadyStateTerminationCriteria{mode}) where {mode}
     print(io,
           "SteadyStateTerminationCriteria(mode = $(mode), abstol = $(s.abstol), reltol = $(s.reltol)")
-    if mode ∈ (:rel_safe, :rel_safe_best, :abs_safe, :abs_safe_best)
+    if mode ∈ SAFE_TERMINATION_MODES
         print(io, ", safe_termination_options = ", s.safe_termination_options, ")")
     else
         print(io, ")")
     end
 end
 
-function SteadyStateTerminationCriteria(mode = :default; abstol::T = 1e-8,
+function SteadyStateTerminationCriteria(mode = SteadyStateTerminationMode.Default;
+                                        abstol::T = 1e-8,
                                         reltol::T = 1e-6, protective_threshold = 1e3,
                                         patience_steps::Int = 30,
                                         patience_objective_multiplier = 3,
                                         min_max_factor = 1.3) where {T}
+    @assert mode ∈ instances(SteadyStateTerminationMode.T)
     safe_termination_options = if mode ∈
-                                  (:rel_safe, :rel_safe_best, :abs_safe, :abs_safe_best)
+                                  (SteadyStateTerminationMode.RelSafe,
+                                   SteadyStateTerminationMode.RelSafeBest,
+                                   SteadyStateTerminationMode.AbsSafe,
+                                   SteadyStateTerminationMode.AbsSafeBest)
         SafeTerminationOptions(protective_threshold, patience_steps,
                                patience_objective_multiplier, min_max_factor)
     else
@@ -95,7 +128,7 @@ end
 
 _get_termination_mode(::SteadyStateTerminationCriteria{mode}) where {mode} = Val(mode)
 
-for mode in (:default, :norm, :rel, :rel_norm, :abs, :abs_norm)
+for mode in BASIC_TERMINATION_MODES
     T = SteadyStateTerminationCriteria{mode}
     mode_val = Val(mode)
     @eval function _get_termination_condition(::$(T), storage = nothing)
@@ -106,7 +139,7 @@ for mode in (:default, :norm, :rel, :rel_norm, :abs, :abs_norm)
     end
 end
 
-for mode in (:rel_safe, :rel_safe_best, :abs_safe, :abs_safe_best)
+for mode in SAFE_TERMINATION_MODES
     T = SteadyStateTerminationCriteria{mode}
     mode_val = Val(mode)
     @eval function _get_termination_condition(cond::$(T), storage)
@@ -116,7 +149,7 @@ for mode in (:rel_safe, :rel_safe_best, :abs_safe, :abs_safe_best)
         objective_values = aType[]
         patience_objective_multiplier = cond.safe_termination_options.patience_objective_multiplier
 
-        if $(mode ∈ (:rel_safe_best, :abs_safe_best))
+        if $(mode ∈ SAFE_BEST_TERMINATION_MODES)
             storage[:best_objective_value] = aType(Inf)
             storage[:best_objective_value_iteration] = 0
         end
@@ -125,7 +158,7 @@ for mode in (:rel_safe, :rel_safe_best, :abs_safe, :abs_safe_best)
             du = get_du(integrator)
             u = integrator.u
 
-            if $(mode ∈ (:abs_safe, :abs_safe_best))
+            if $(mode ∈ SAFE_BEST_TERMINATION_MODES)
                 objective = norm(du)
                 criteria = abstol
             else
@@ -133,7 +166,7 @@ for mode in (:rel_safe, :rel_safe_best, :abs_safe, :abs_safe_best)
                 criteria = reltol
             end
 
-            if $(mode ∈ (:rel_safe_best, :abs_safe_best))
+            if $(mode ∈ SAFE_BEST_TERMINATION_MODES)
                 if objective < storage[:best_objective_value]
                     storage[:best_objective_value] = objective
                     storage[:best_objective_value_iteration] = nstep + 1
@@ -186,23 +219,26 @@ end
     return _has_converged(du, u, _get_termination_mode(cond), abstol, reltol)
 end
 
-for mode in (:default, :norm, :rel, :rel_norm, :rel_safe, :rel_safe_best, :abs, :abs_norm,
-             :abs_safe, :abs_safe_best)
+for mode in instances(SteadyStateTerminationMode.T)
     mode_val = Val(mode)
     @eval @inline @inbounds function _has_converged(du, u, ::$(typeof(mode_val)),
                                                     abstol, reltol)
-        if $(mode == :norm)
+        if $(mode == SteadyStateTerminationMode.Norm)
             du_norm = norm(du)
             return du_norm <= abstol || du_norm <= reltol * norm(du + u)
-        elseif $(mode == :rel)
+        elseif $(mode == SteadyStateTerminationMode.Rel)
             return all(abs.(du) .<= reltol .* abs.(u))
-        elseif $(mode ∈ (:rel_norm, :rel_safe, :rel_safe_best))
+        elseif $(mode ∈
+                 (SteadyStateTerminationMode.RelNorm, SteadyStateTerminationMode.RelSafe,
+                  SteadyStateTerminationMode.RelSafeBest))
             return norm(du) <= reltol * norm(du .+ u)
-        elseif $(mode == :abs)
+        elseif $(mode == SteadyStateTerminationMode.Abs)
             return all(abs.(du) .<= abstol)
-        elseif $(mode ∈ (:abs_norm, :abs_safe, :abs_safe_best))
+        elseif $(mode ∈
+                 (SteadyStateTerminationMode.AbsNorm, SteadyStateTerminationMode.AbsSafe,
+                  SteadyStateTerminationMode.AbsSafeBest))
             return norm(du) <= abstol
-        elseif $(mode == :default)
+        elseif $(mode == SteadyStateTerminationMode.Default)
             return all((abs.(du) .<= abstol) .| (abs.(du) .<= reltol .* abs.(u)))
         end
     end

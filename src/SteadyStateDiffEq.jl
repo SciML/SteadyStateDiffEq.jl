@@ -11,6 +11,7 @@ include("termination.jl")
 include("algorithms.jl")
 include("solve.jl")
 
-export SSRootfind, DynamicSS, SteadyStateTerminationCriteria
+export SSRootfind, DynamicSS
+export SteadyStateTerminationCriteria, SteadyStateTerminationMode
 
 end # module
