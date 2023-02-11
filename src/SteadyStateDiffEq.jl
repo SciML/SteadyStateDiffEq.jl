@@ -5,10 +5,13 @@ using Reexport
 
 using NLsolve, DiffEqCallbacks
 using LinearAlgebra
+using EnumX, SciMLBase, Markdown
 
+include("termination.jl")
 include("algorithms.jl")
 include("solve.jl")
 
 export SSRootfind, DynamicSS
+export SteadyStateTerminationCriteria, SteadyStateTerminationMode
 
 end # module

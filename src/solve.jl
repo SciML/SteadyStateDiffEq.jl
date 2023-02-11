@@ -93,38 +93,45 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
         end
     end
 
+    mode = SciMLBase._unwrap_val(_get_termination_mode(alg.termination_condition))
+
+    if mode ∈ SAFE_BEST_TERMINATION_MODES && !save_everystep
+        throw(ArgumentError("`save_everystep` must be `true` if using `$(mode)` termination condition."))
+    end
+
+    storage = mode ∈ SAFE_TERMINATION_MODES ? Dict() : nothing
+    callback = TerminateSteadyState(alg.termination_condition.abstol,
+                                    alg.termination_condition.reltol,
+                                    _get_termination_condition(alg.termination_condition,
+                                                               storage))
+
     _prob = ODEProblem(f, prob.u0, tspan, prob.p)
-    sol = solve(_prob, alg.alg, args...; kwargs...,
-                callback = TerminateSteadyState(alg.abstol, alg.reltol),
-                save_everystep = save_everystep, save_start = save_start)
+    sol = solve(_prob, alg.alg, args...; kwargs..., save_everystep, save_start, callback)
+
+    idx = if storage === nothing || !haskey(storage, :best_objective_value_iteration)
+        length(sol.u)
+    else
+        storage[:best_objective_value_iteration]
+    end
+    u, t = sol.u[idx], sol.t[idx]
+
     if isinplace(prob)
         du = similar(sol.u[end])
-        f(du, sol.u[end], prob.p, sol.t[end])
+        f(du, u, prob.p, t)
     else
-        du = f(sol.u[end], prob.p, sol.t[end])
+        du = f(u, prob.p, t)
     end
-    function array_condition()
-        all(abs(d) <= abstol || abs(d) <= reltol * abs(u)
-            for (d, abstol, reltol, u)
-                in zip(du, Iterators.cycle(alg.abstol), Iterators.cycle(alg.reltol),
-                       sol.u[end]))
-    end
-    function broadcast_condition()
-        all((abs.(du) .<= alg.abstol) .| (abs.(du) .<= alg.reltol .* abs.(sol.u[end])))
-    end
+
+    retcode = sol.retcode == ReturnCode.Terminated &&
+              _has_converged(du, u, alg.termination_condition) ? ReturnCode.Success :
+              ReturnCode.Failure
 
     if save_idxs !== nothing
-        u = sol.u[end][save_idxs]
+        u = sol.u[idx][save_idxs]
         du = du[save_idxs]
     else
-        u = sol.u[end]
+        u = sol.u[idx]
     end
 
-    if sol.retcode == ReturnCode.Terminated &&
-       (typeof(sol.u[end]) <: Array ? array_condition() : broadcast_condition())
-        _sol = DiffEqBase.build_solution(prob, alg, u, du; retcode = ReturnCode.Success)
-    else
-        _sol = DiffEqBase.build_solution(prob, alg, u, du; retcode = ReturnCode.Failure)
-    end
-    _sol
+    return DiffEqBase.build_solution(prob, alg, u, du; retcode)
 end
