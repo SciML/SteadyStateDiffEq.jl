@@ -88,19 +88,20 @@ prob = SteadyStateProblem(ODEProblem(fiip, u0, tspan))
 sol2 = solve(prob, DynamicSS(Tsit5(), abstol = 1e-4))
 @test typeof(u0) == typeof(sol2.u)
 
-for mode in instances(SteadyStateTerminationMode.T)
-    termination_condition = SteadyStateTerminationCriteria(mode; abstol = 1e-4,
-                                                           reltol = 1e-4)
+for mode in instances(NLSolveTerminationMode.T)
+    mode == NLSolveTerminationMode.NLSolveDefault && continue
+
+    termination_condition = NLSolveTerminationCondition(mode; abstol = 1e-4, reltol = 1e-4)
     sol = solve(prob,
                 DynamicSS(Tsit5(); abstol = 1e-4, reltol = 1e-4, termination_condition),
-                save_everystep = mode ∈ SteadyStateDiffEq.SAFE_BEST_TERMINATION_MODES)
+                save_everystep = mode ∈ DiffEqBase.SAFE_BEST_TERMINATION_MODES)
 
     @test sol.retcode == ReturnCode.Success
     @test sol.u ≈ sol2.u
 
     sol = solve(proboop,
                 DynamicSS(Tsit5(); abstol = 1e-4, reltol = 1e-4, termination_condition),
-                save_everystep = mode ∈ SteadyStateDiffEq.SAFE_BEST_TERMINATION_MODES)
+                save_everystep = mode ∈ DiffEqBase.SAFE_BEST_TERMINATION_MODES)
 
     @test sol.retcode == ReturnCode.Success
     @test sol.u ≈ sol2.u

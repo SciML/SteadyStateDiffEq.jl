@@ -34,7 +34,7 @@ sol = solve(prob,DynamicSS(CVODE_BDF()),dt=1.0)
 
     If you use `CVODE_BDF` you may need to give a starting `dt` via `dt=....`.*
 """
-struct DynamicSS{A, AT, RT, TS, TC <: SteadyStateTerminationCriteria} <:
+struct DynamicSS{A, AT, RT, TS, TC <: NLSolveTerminationCondition} <:
        SteadyStateDiffEqAlgorithm
     alg::A
     abstol::AT
@@ -42,8 +42,9 @@ struct DynamicSS{A, AT, RT, TS, TC <: SteadyStateTerminationCriteria} <:
     tspan::TS
     termination_condition::TC
 end
+
 function DynamicSS(alg; abstol = 1e-8, reltol = 1e-6, tspan = Inf,
-                   termination_condition = SteadyStateTerminationCriteria(; abstol, reltol))
+                   termination_condition = NLSolveTerminationCondition(NLSolveTerminationMode.SteadyStateDefault; abstol, reltol))
     DynamicSS(alg, abstol, reltol, tspan, termination_condition)
 end
 
