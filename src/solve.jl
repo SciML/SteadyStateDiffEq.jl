@@ -93,27 +93,29 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
         end
     end
 
-    mode = SciMLBase._unwrap_val(_get_termination_mode(alg.termination_condition))
+    mode = DiffEqBase.get_termination_mode(alg.termination_condition)
 
-    if mode ∈ SAFE_BEST_TERMINATION_MODES && !save_everystep
+    if mode ∈ DiffEqBase.SAFE_BEST_TERMINATION_MODES && !save_everystep
         throw(ArgumentError("`save_everystep` must be `true` if using `$(mode)` termination condition."))
     end
 
-    storage = mode ∈ SAFE_TERMINATION_MODES ? Dict() : nothing
+    storage = mode ∈ DiffEqBase.SAFE_TERMINATION_MODES ? Dict() : nothing
     callback = TerminateSteadyState(alg.termination_condition.abstol,
                                     alg.termination_condition.reltol,
-                                    _get_termination_condition(alg.termination_condition,
-                                                               storage))
+                                    alg.termination_condition(storage))
 
     _prob = ODEProblem(f, prob.u0, tspan, prob.p)
     sol = solve(_prob, alg.alg, args...; kwargs..., save_everystep, save_start, callback)
 
-    idx = if storage === nothing || !haskey(storage, :best_objective_value_iteration)
-        length(sol.u)
+    idx, idx_prev = if storage === nothing ||
+                       !haskey(storage, :best_objective_value_iteration)
+        # weird hack but can't really help if save_everystep is turned off (also not
+        # relevant unless the user sets the mode to NLSolveDefault)
+        length(sol.u), (save_everystep ? length(sol.u) - 1 : 1)
     else
-        storage[:best_objective_value_iteration]
+        storage[:best_objective_value_iteration], 1 # idx_prev is irrelevant
     end
-    u, t = sol.u[idx], sol.t[idx]
+    u, t, uprev = sol.u[idx], sol.t[idx], sol.u[idx_prev]
 
     if isinplace(prob)
         du = similar(sol.u[end])
@@ -123,7 +125,8 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
     end
 
     retcode = sol.retcode == ReturnCode.Terminated &&
-              _has_converged(du, u, alg.termination_condition) ? ReturnCode.Success :
+              DiffEqBase._has_converged(du, u, uprev, alg.termination_condition) ?
+              ReturnCode.Success :
               ReturnCode.Failure
 
     if save_idxs !== nothing
