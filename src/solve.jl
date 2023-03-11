@@ -136,5 +136,5 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
         u = sol.u[idx]
     end
 
-    return DiffEqBase.build_solution(prob, alg, u, du; retcode)
+    return DiffEqBase.build_solution(prob, alg, u, du; retcode, sol.stats)
 end
