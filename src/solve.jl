@@ -93,6 +93,10 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
         end
     end
 
+    #= if isdefined(Main, :Infiltrator)
+        Main.infiltrate(@__MODULE__, Base.@locals, @__FILE__, @__LINE__)
+    end =#
+
     mode = DiffEqBase.get_termination_mode(alg.termination_condition)
 
     if mode ∈ DiffEqBase.SAFE_BEST_TERMINATION_MODES && !save_everystep
@@ -100,10 +104,11 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
     end
 
     storage = mode ∈ DiffEqBase.SAFE_TERMINATION_MODES ? Dict() : nothing
-    callback = TerminateSteadyState(alg.termination_condition.abstol,
-                                    alg.termination_condition.reltol,
-                                    alg.termination_condition(storage))
+    cb1 = TerminateSteadyState(alg.termination_condition.abstol,
+                               alg.termination_condition.reltol,
+                               alg.termination_condition(storage))
 
+    callback = CallbackSet(cb1, kwargs[:callback])
     _prob = ODEProblem(f, prob.u0, tspan, prob.p)
     sol = solve(_prob, alg.alg, args...; kwargs..., save_everystep, save_start, callback)
 
