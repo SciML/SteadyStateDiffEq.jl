@@ -101,8 +101,8 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
 
     storage = mode ∈ DiffEqBase.SAFE_TERMINATION_MODES ? Dict() : nothing
     callback = TerminateSteadyState(alg.termination_condition.abstol,
-                               alg.termination_condition.reltol,
-                               alg.termination_condition(storage))
+                                    alg.termination_condition.reltol,
+                                    alg.termination_condition(storage))
 
     if haskey(kwargs, :callback)
         callback = CallbackSet(callback, kwargs[:callback])
