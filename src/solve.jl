@@ -104,6 +104,10 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
                                     alg.termination_condition.reltol,
                                     alg.termination_condition(storage))
 
+    if haskey(kwargs, :callback)
+        callback = CallbackSet(callback, kwargs[:callback])
+    end
+
     _prob = ODEProblem(f, prob.u0, tspan, prob.p)
     sol = solve(_prob, alg.alg, args...; kwargs..., save_everystep, save_start, callback)
 

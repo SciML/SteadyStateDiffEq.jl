@@ -119,4 +119,15 @@ sol = solve(prob, DynamicSS(Tsit5()))
 @test sol.retcode == ReturnCode.Success
 @test abs(sol.u[end]) < 1e-8
 
+# Callbacks 
+using DiffEqCallbacks
+u0 = zeros(2)
+prob = SteadyStateProblem(f, u0)
+saved_values = SavedValues(Float64, Vector{Float64})
+cb = SavingCallback((u, t, integrator) -> copy(u), saved_values,
+                    save_everystep = true, save_start = true)
+sol = solve(prob, DynamicSS(Rodas5()), callback = cb, save_everystep = true, save_start = true)
+@test sol.retcode == ReturnCode.Success
+@test isapprox(saved_values.saveval[end], sol.u)
+
 include("autodiff.jl")
