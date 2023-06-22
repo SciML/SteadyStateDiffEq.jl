@@ -3,8 +3,8 @@ function DiffEqBase.prepare_alg(alg::DynamicSS)
 end
 
 function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
-                            alg::SteadyStateDiffEqAlgorithm, args...;
-                            abstol = 1e-8, kwargs...)
+    alg::SteadyStateDiffEqAlgorithm, args...;
+    abstol = 1e-8, kwargs...)
     @warn """
     This method is deprecated in favor of using NonlinearSolve.jl. Note that an ODEProblem
     can be converted into a steady state NonlinearProblem via
@@ -35,9 +35,9 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
             f! = (du, u) -> (prob.f(du, u, p, Inf); nothing)
         else # Then it's an in-place function on an abstract array
             f! = (du, u) -> (prob.f(reshape(du, sizeu),
-                                    reshape(u, sizeu), p, Inf);
-                             du = vec(du);
-                             nothing)
+                reshape(u, sizeu), p, Inf);
+            du = vec(du);
+            nothing)
         end
     elseif typeof(prob) <: NonlinearProblem
         if !isinplace(prob) &&
@@ -49,9 +49,9 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
             f! = (du, u) -> (prob.f(du, u, p); nothing)
         else # Then it's an in-place function on an abstract array
             f! = (du, u) -> (prob.f(reshape(du, sizeu),
-                                    reshape(u, sizeu), p);
-                             du = vec(du);
-                             nothing)
+                reshape(u, sizeu), p);
+            du = vec(du);
+            nothing)
         end
     end
 
@@ -65,7 +65,7 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
             resid = similar(u)
             f!(resid, u)
             DiffEqBase.build_solution(prob, alg, u, resid; retcode = ReturnCode.Success,
-                                      original = original)
+                original = original)
         else
             u = reshape(original, sizeu)
             resid = similar(u)
@@ -78,11 +78,11 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
 end
 
 function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
-                            alg::DynamicSS, args...; save_everystep = false,
-                            save_start = false, save_idxs = nothing, kwargs...)
+    alg::DynamicSS, args...; save_everystep = false,
+    save_start = false, save_idxs = nothing, kwargs...)
     tspan = alg.tspan isa Tuple ? alg.tspan :
             convert.(DiffEqBase.value(real(eltype(prob.u0))),
-                     (DiffEqBase.value(zero(alg.tspan)), alg.tspan))
+        (DiffEqBase.value(zero(alg.tspan)), alg.tspan))
     if typeof(prob) <: SteadyStateProblem
         f = prob.f
     elseif typeof(prob) <: NonlinearProblem
@@ -101,8 +101,8 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
 
     storage = mode ∈ DiffEqBase.SAFE_TERMINATION_MODES ? Dict() : nothing
     callback = TerminateSteadyState(alg.termination_condition.abstol,
-                                    alg.termination_condition.reltol,
-                                    alg.termination_condition(storage))
+        alg.termination_condition.reltol,
+        alg.termination_condition(storage))
 
     if haskey(kwargs, :callback)
         callback = CallbackSet(callback, kwargs[:callback])
