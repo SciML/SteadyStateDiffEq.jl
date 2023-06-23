@@ -117,7 +117,7 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
         # relevant unless the user sets the mode to NLSolveDefault)
         length(sol.u), (save_everystep ? length(sol.u) - 1 : 1)
     else
-        storage.best_objective_value_iteration, 1 # idx_prev is irrelevant
+        max(storage.best_objective_value_iteration, 1), 1 # idx_prev is irrelevant
     end
     u, t, uprev = sol.u[idx], sol.t[idx], sol.u[idx_prev]
 
