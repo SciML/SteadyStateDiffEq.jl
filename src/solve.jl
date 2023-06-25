@@ -95,11 +95,11 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
 
     mode = DiffEqBase.get_termination_mode(alg.termination_condition)
 
-    if mode ∈ DiffEqBase.SAFE_BEST_TERMINATION_MODES && !save_everystep
-        throw(ArgumentError("`save_everystep` must be `true` if using `$(mode)` termination condition."))
+    storage =  if mode ∈ DiffEqBase.SAFE_TERMINATION_MODES
+        NLSolveSafeTerminationResult()
+    else
+        nothing
     end
-
-    storage = mode ∈ DiffEqBase.SAFE_TERMINATION_MODES ? Dict() : nothing
     callback = TerminateSteadyState(alg.termination_condition.abstol,
                                     alg.termination_condition.reltol,
                                     alg.termination_condition(storage))
@@ -112,12 +112,12 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
     sol = solve(_prob, alg.alg, args...; kwargs..., save_everystep, save_start, callback)
 
     idx, idx_prev = if storage === nothing ||
-                       !haskey(storage, :best_objective_value_iteration)
+                       !hasproperty(storage, :best_objective_value_iteration)
         # weird hack but can't really help if save_everystep is turned off (also not
         # relevant unless the user sets the mode to NLSolveDefault)
         length(sol.u), (save_everystep ? length(sol.u) - 1 : 1)
     else
-        storage[:best_objective_value_iteration], 1 # idx_prev is irrelevant
+        max(storage.best_objective_value_iteration, 1), 1 # idx_prev is irrelevant
     end
     u, t, uprev = sol.u[idx], sol.t[idx], sol.u[idx_prev]
 
