@@ -19,11 +19,11 @@ f(du, sol.u, nothing, 0)
 prob = ODEProblem(f, u0, (0.0, 1.0))
 prob = SteadyStateProblem(prob)
 sol = solve(prob,
-            SSRootfind(nlsolve = (f, u0, abstol) -> (NLsolve.nlsolve(f, u0,
-                                                                     autodiff = :forward,
-                                                                     method = :newton,
-                                                                     iterations = Int(1e6),
-                                                                     ftol = abstol))))
+    SSRootfind(nlsolve = (f, u0, abstol) -> (NLsolve.nlsolve(f, u0,
+        autodiff = :forward,
+        method = :newton,
+        iterations = Int(1e6),
+        ftol = abstol))))
 @test sol.retcode == ReturnCode.Success
 @test typeof(sol.original) <: NLsolve.SolverResults
 
@@ -93,15 +93,15 @@ for mode in instances(NLSolveTerminationMode.T)
 
     termination_condition = NLSolveTerminationCondition(mode; abstol = 1e-4, reltol = 1e-4)
     sol = solve(prob,
-                DynamicSS(Tsit5(); abstol = 1e-4, reltol = 1e-4, termination_condition),
-                save_everystep = mode ∈ DiffEqBase.SAFE_BEST_TERMINATION_MODES)
+        DynamicSS(Tsit5(); abstol = 1e-4, reltol = 1e-4, termination_condition),
+        save_everystep = mode ∈ DiffEqBase.SAFE_BEST_TERMINATION_MODES)
 
     @test sol.retcode == ReturnCode.Success
     @test sol.u ≈ sol2.u
 
     sol = solve(proboop,
-                DynamicSS(Tsit5(); abstol = 1e-4, reltol = 1e-4, termination_condition),
-                save_everystep = mode ∈ DiffEqBase.SAFE_BEST_TERMINATION_MODES)
+        DynamicSS(Tsit5(); abstol = 1e-4, reltol = 1e-4, termination_condition),
+        save_everystep = mode ∈ DiffEqBase.SAFE_BEST_TERMINATION_MODES)
 
     @test sol.retcode == ReturnCode.Success
     @test sol.u ≈ sol2.u
@@ -125,8 +125,12 @@ u0 = zeros(2)
 prob = SteadyStateProblem(f, u0)
 saved_values = SavedValues(Float64, Vector{Float64})
 cb = SavingCallback((u, t, integrator) -> copy(u), saved_values,
-                    save_everystep = true, save_start = true)
-sol = solve(prob, DynamicSS(Rodas5()), callback = cb, save_everystep = true, save_start = true)
+    save_everystep = true, save_start = true)
+sol = solve(prob,
+    DynamicSS(Rodas5()),
+    callback = cb,
+    save_everystep = true,
+    save_start = true)
 @test sol.retcode == ReturnCode.Success
 @test isapprox(saved_values.saveval[end], sol.u)
 
