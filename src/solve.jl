@@ -95,7 +95,7 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
 
     mode = DiffEqBase.get_termination_mode(alg.termination_condition)
 
-    storage =  if mode ∈ DiffEqBase.SAFE_TERMINATION_MODES
+    storage = if mode ∈ DiffEqBase.SAFE_TERMINATION_MODES
         NLSolveSafeTerminationResult()
     else
         nothing
