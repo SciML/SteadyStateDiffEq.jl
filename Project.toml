@@ -1,6 +1,6 @@
 name = "SteadyStateDiffEq"
 uuid = "9672c7b4-1e72-59bd-8a11-6ac3964bc41f"
-version = "1.16.0"
+version = "1.16.1"
 
 [deps]
 DiffEqBase = "2b5f629d-d688-5b77-993f-72d75c75574e"
@@ -15,7 +15,7 @@ DiffEqBase = "6.126"
 DiffEqCallbacks = "2.9"
 NLsolve = "4.2"
 Reexport = "0.2, 1.0"
-SciMLBase = "1.90"
+SciMLBase = "1.90, 2"
 julia = "1.6"
 
 [extras]
