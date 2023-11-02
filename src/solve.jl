@@ -16,7 +16,7 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
     for more details.
     """
 
-    if typeof(prob.u0) <: Number
+    if prob.u0 isa Number
         u0 = [prob.u0]
     else
         u0 = vec(deepcopy(prob.u0))
@@ -25,13 +25,13 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
     sizeu = size(prob.u0)
     p = prob.p
 
-    if typeof(prob) <: SteadyStateProblem
+    if prob isa SteadyStateProblem
         if !isinplace(prob) &&
-           (typeof(prob.u0) <: AbstractVector || typeof(prob.u0) <: Number)
+           (prob.u0 isa AbstractVector || prob.u0 isa Number)
             f! = (du, u) -> (du[:] = prob.f(u, p, Inf); nothing)
-        elseif !isinplace(prob) && typeof(prob.u0) <: AbstractArray
+        elseif !isinplace(prob) && prob.u0 isa AbstractArray
             f! = (du, u) -> (du[:] = vec(prob.f(reshape(u, sizeu), p, Inf)); nothing)
-        elseif typeof(prob.u0) <: AbstractVector
+        elseif prob.u0 isa AbstractVector
             f! = (du, u) -> (prob.f(du, u, p, Inf); nothing)
         else # Then it's an in-place function on an abstract array
             f! = (du, u) -> (prob.f(reshape(du, sizeu),
@@ -39,13 +39,13 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
             du = vec(du);
             nothing)
         end
-    elseif typeof(prob) <: NonlinearProblem
+    elseif prob isa NonlinearProblem
         if !isinplace(prob) &&
-           (typeof(prob.u0) <: AbstractVector || typeof(prob.u0) <: Number)
+           (prob.u0 isa AbstractVector || prob.u0 isa Number)
             f! = (du, u) -> (du[:] = prob.f(u, p); nothing)
-        elseif !isinplace(prob) && typeof(prob.u0) <: AbstractArray
+        elseif !isinplace(prob) && prob.u0 isa AbstractArray
             f! = (du, u) -> (du[:] = vec(prob.f(reshape(u, sizeu), p)); nothing)
-        elseif typeof(prob.u0) <: AbstractVector
+        elseif prob.u0 isa AbstractVector
             f! = (du, u) -> (prob.f(du, u, p); nothing)
         else # Then it's an in-place function on an abstract array
             f! = (du, u) -> (prob.f(reshape(du, sizeu),
@@ -58,9 +58,9 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
     # du = similar(u)
     # f = (u) -> (f!(du,u); du) # out-of-place version
 
-    if typeof(alg) <: SSRootfind
+    if alg isa SSRootfind
         original = alg.nlsolve(f!, u0, abstol)
-        if typeof(original) <: NLsolve.SolverResults
+        if original isa NLsolve.SolverResults
             u = reshape(original.zero, sizeu)
             resid = similar(u)
             f!(resid, u)
@@ -83,9 +83,9 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
     tspan = alg.tspan isa Tuple ? alg.tspan :
             convert.(DiffEqBase.value(real(eltype(prob.u0))),
         (DiffEqBase.value(zero(alg.tspan)), alg.tspan))
-    if typeof(prob) <: SteadyStateProblem
+    if prob isa SteadyStateProblem
         f = prob.f
-    elseif typeof(prob) <: NonlinearProblem
+    elseif prob isa NonlinearProblem
         if isinplace(prob)
             f = (du, u, p, t) -> prob.f(du, u, p)
         else
