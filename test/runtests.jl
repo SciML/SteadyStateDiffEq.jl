@@ -25,7 +25,7 @@ sol = solve(prob,
         iterations = Int(1e6),
         ftol = abstol))))
 @test sol.retcode == ReturnCode.Success
-@test typeof(sol.original) <: NLsolve.SolverResults
+@test sol.original isa NLsolve.SolverResults
 
 f(du, sol.u, nothing, 0)
 @test du == [0, 0]
