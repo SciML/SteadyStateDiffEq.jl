@@ -4,8 +4,8 @@ struct SSRootfind{F} <: SteadyStateDiffEqAlgorithm
     nlsolve::F
 end
 function SSRootfind(;
-    nlsolve = (f, u0, abstol) -> (NLsolve.nlsolve(f, u0,
-        ftol = abstol)))
+        nlsolve = (f, u0, abstol) -> (NLsolve.nlsolve(f, u0,
+            ftol = abstol)))
     SSRootfind(nlsolve)
 end
 
@@ -44,9 +44,9 @@ struct DynamicSS{A, AT, RT, TS, TC <: NLSolveTerminationCondition} <:
 end
 
 function DynamicSS(alg; abstol = 1e-8, reltol = 1e-6, tspan = Inf,
-    termination_condition = NLSolveTerminationCondition(NLSolveTerminationMode.SteadyStateDefault;
-        abstol,
-        reltol))
+        termination_condition = NLSolveTerminationCondition(NLSolveTerminationMode.SteadyStateDefault;
+            abstol,
+            reltol))
     DynamicSS(alg, abstol, reltol, tspan, termination_condition)
 end
 

@@ -3,8 +3,8 @@ function DiffEqBase.prepare_alg(alg::DynamicSS)
 end
 
 function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
-    alg::SteadyStateDiffEqAlgorithm, args...;
-    abstol = 1e-8, kwargs...)
+        alg::SteadyStateDiffEqAlgorithm, args...;
+        abstol = 1e-8, kwargs...)
     @warn """
     This method is deprecated in favor of using NonlinearSolve.jl. Note that an ODEProblem
     can be converted into a steady state NonlinearProblem via
@@ -78,8 +78,8 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
 end
 
 function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
-    alg::DynamicSS, args...; save_everystep = false,
-    save_start = false, save_idxs = nothing, kwargs...)
+        alg::DynamicSS, args...; save_everystep = false,
+        save_start = false, save_idxs = nothing, kwargs...)
     tspan = alg.tspan isa Tuple ? alg.tspan :
             convert.(DiffEqBase.value(real(eltype(prob.u0))),
         (DiffEqBase.value(zero(alg.tspan)), alg.tspan))
