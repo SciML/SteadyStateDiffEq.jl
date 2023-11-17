@@ -1,6 +1,4 @@
-using ModelingToolkit
-using OrdinaryDiffEq
-using ForwardDiff
+using ModelingToolkit, OrdinaryDiffEq, ForwardDiff, Test, SteadyStateDiffEq
 using ForwardDiff: Dual
 
 @variables begin

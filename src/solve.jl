@@ -1,144 +1,133 @@
-function DiffEqBase.prepare_alg(alg::DynamicSS)
-    DynamicSS(DiffEqBase.prepare_alg(alg.alg), alg.abstol, alg.reltol, alg.tspan)
+function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem, alg::SSRootfind,
+        args...; kwargs...)
+    nlprob = NonlinearProblem(prob)
+    nlsol = DiffEqBase.__solve(nlprob, alg.alg, args...; kwargs...)
+    return SciMLBase.build_solution(prob, SSRootfind(nlsol.alg), nlsol.u, nlsol.resid;
+        nlsol.retcode, nlsol.stats, nlsol.left, nlsol.right, original = nlsol)
 end
 
-function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
-    alg::SteadyStateDiffEqAlgorithm, args...;
-    abstol = 1e-8, kwargs...)
-    @warn """
-    This method is deprecated in favor of using NonlinearSolve.jl. Note that an ODEProblem
-    can be converted into a steady state NonlinearProblem via
-    `NonlinearProblem(prob::ODEProblem)`. The algorithm `NLSolveJL` as part of the
-    SciMLNLSolve.jl set of nonlinear solvers for NonlinearSolve.jl is equivalent to
-    SteadyStateDiffEq.jl's default `SSRootfind` (with a few improvements).
-
-    See [the documentation of NonlinearSolve.jl](https://docs.sciml.ai/NonlinearSolve/stable/)
-    for more details.
-    """
-
-    if prob.u0 isa Number
-        u0 = [prob.u0]
-    else
-        u0 = vec(deepcopy(prob.u0))
-    end
-
-    sizeu = size(prob.u0)
-    p = prob.p
-
-    if prob isa SteadyStateProblem
-        if !isinplace(prob) &&
-           (prob.u0 isa AbstractVector || prob.u0 isa Number)
-            f! = (du, u) -> (du[:] = prob.f(u, p, Inf); nothing)
-        elseif !isinplace(prob) && prob.u0 isa AbstractArray
-            f! = (du, u) -> (du[:] = vec(prob.f(reshape(u, sizeu), p, Inf)); nothing)
-        elseif prob.u0 isa AbstractVector
-            f! = (du, u) -> (prob.f(du, u, p, Inf); nothing)
-        else # Then it's an in-place function on an abstract array
-            f! = (du, u) -> (prob.f(reshape(du, sizeu),
-                reshape(u, sizeu), p, Inf);
-            du = vec(du);
-            nothing)
-        end
-    elseif prob isa NonlinearProblem
-        if !isinplace(prob) &&
-           (prob.u0 isa AbstractVector || prob.u0 isa Number)
-            f! = (du, u) -> (du[:] = prob.f(u, p); nothing)
-        elseif !isinplace(prob) && prob.u0 isa AbstractArray
-            f! = (du, u) -> (du[:] = vec(prob.f(reshape(u, sizeu), p)); nothing)
-        elseif prob.u0 isa AbstractVector
-            f! = (du, u) -> (prob.f(du, u, p); nothing)
-        else # Then it's an in-place function on an abstract array
-            f! = (du, u) -> (prob.f(reshape(du, sizeu),
-                reshape(u, sizeu), p);
-            du = vec(du);
-            nothing)
-        end
-    end
-
-    # du = similar(u)
-    # f = (u) -> (f!(du,u); du) # out-of-place version
-
-    if alg isa SSRootfind
-        original = alg.nlsolve(f!, u0, abstol)
-        if original isa NLsolve.SolverResults
-            u = reshape(original.zero, sizeu)
-            resid = similar(u)
-            f!(resid, u)
-            DiffEqBase.build_solution(prob, alg, u, resid; retcode = ReturnCode.Success,
-                original = original)
-        else
-            u = reshape(original, sizeu)
-            resid = similar(u)
-            f!(resid, u)
-            DiffEqBase.build_solution(prob, alg, u, resid; retcode = ReturnCode.Success)
-        end
-    else
-        error("Algorithm not recognized")
-    end
+__get_tspan(u0, alg::DynamicSS) = __get_tspan(u0, alg.tspan)
+__get_tspan(u0, tspan::Tuple) = tspan
+function __get_tspan(u0, tspan::Number)
+    return convert.(DiffEqBase.value(real(eltype(u0))),
+        (DiffEqBase.value(zero(tspan)), tspan))
 end
 
-function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem,
-    alg::DynamicSS, args...; save_everystep = false,
-    save_start = false, save_idxs = nothing, kwargs...)
-    tspan = alg.tspan isa Tuple ? alg.tspan :
-            convert.(DiffEqBase.value(real(eltype(prob.u0))),
-        (DiffEqBase.value(zero(alg.tspan)), alg.tspan))
-    if prob isa SteadyStateProblem
-        f = prob.f
+function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem, alg::DynamicSS,
+        args...; abstol = 1e-8, reltol = 1e-6, odesolve_kwargs = (;),
+        save_idxs = nothing, termination_condition = SteadyStateDiffEqTerminationMode(),
+        kwargs...)
+    tspan = __get_tspan(prob.u0, alg)
+
+    f = if prob isa SteadyStateProblem
+        prob.f
     elseif prob isa NonlinearProblem
         if isinplace(prob)
-            f = (du, u, p, t) -> prob.f(du, u, p)
+            (du, u, p, t) -> prob.f(du, u, p)
         else
-            f = (u, p, t) -> prob.f(u, p)
+            (u, p, t) -> prob.f(u, p)
         end
     end
 
-    mode = DiffEqBase.get_termination_mode(alg.termination_condition)
-
-    storage = if mode ∈ DiffEqBase.SAFE_TERMINATION_MODES
-        NLSolveSafeTerminationResult()
-    else
-        nothing
-    end
-    callback = TerminateSteadyState(alg.termination_condition.abstol,
-        alg.termination_condition.reltol,
-        alg.termination_condition(storage))
-
-    if haskey(kwargs, :callback)
-        callback = CallbackSet(callback, kwargs[:callback])
-    end
-
-    _prob = ODEProblem(f, prob.u0, tspan, prob.p)
-    sol = solve(_prob, alg.alg, args...; kwargs..., save_everystep, save_start, callback)
-
-    idx, idx_prev = if storage === nothing ||
-                       !hasproperty(storage, :best_objective_value_iteration)
-        # weird hack but can't really help if save_everystep is turned off (also not
-        # relevant unless the user sets the mode to NLSolveDefault)
-        length(sol.u), (save_everystep ? length(sol.u) - 1 : 1)
-    else
-        max(storage.best_objective_value_iteration, 1), 1 # idx_prev is irrelevant
-    end
-    u, t, uprev = sol.u[idx], sol.t[idx], sol.u[idx_prev]
-
     if isinplace(prob)
-        du = similar(sol.u[end])
-        f(du, u, prob.p, t)
+        du = similar(prob.u0)
+        f(du, prob.u0, prob.p, first(tspan))
     else
-        du = f(u, prob.p, t)
+        du = f(prob.u0, prob.p, first(tspan))
     end
 
-    retcode = sol.retcode == ReturnCode.Terminated &&
-              DiffEqBase._has_converged(du, u, uprev, alg.termination_condition) ?
-              ReturnCode.Success :
-              ReturnCode.Failure
+    tc_cache = init(du, prob.u0, termination_condition, last(tspan); abstol, reltol)
+    abstol = DiffEqBase.get_abstol(tc_cache)
+    reltol = DiffEqBase.get_reltol(tc_cache)
+
+    function terminate_function(u, t, integrator)
+        return tc_cache(get_du(integrator), integrator.u, integrator.uprev, t)
+    end
+
+    callback = TerminateSteadyState(abstol, reltol, terminate_function;
+        wrap_test = Val(false))
+
+    haskey(kwargs, :callback) && (callback = CallbackSet(callback, kwargs[:callback]))
+    haskey(odesolve_kwargs, :callback) &&
+        (callback = CallbackSet(callback, odesolve_kwargs[:callback]))
+
+    # Construct and solve the ODEProblem
+    odeprob = ODEProblem{isinplace(f)}(f, prob.u0, tspan, prob.p)
+    odesol = DiffEqBase.__solve(odeprob, alg.alg, args...; abstol, reltol, kwargs...,
+        odesolve_kwargs..., callback, save_end = true)
+
+    resid, u, retcode = __get_result_from_sol(termination_condition, tc_cache, odesol)
 
     if save_idxs !== nothing
-        u = sol.u[idx][save_idxs]
-        du = du[save_idxs]
-    else
-        u = sol.u[idx]
+        u = u[save_idxs]
+        resid = resid[save_idxs]
     end
 
-    return DiffEqBase.build_solution(prob, alg, u, du; retcode, sol.stats)
+    return SciMLBase.build_solution(prob, DynamicSS(odesol.alg, alg.tspan), u, resid;
+        retcode, original = odesol)
+end
+
+function __get_result_from_sol(::DiffEqBase.AbstractNonlinearTerminationMode, tc_cache,
+        odesol)
+    u, t = last(odesol.u), last(odesol.t)
+    du = odesol(t, Val{1})
+    return (du, u,
+        ifelse(odesol.retcode == ReturnCode.Terminated, ReturnCode.Success,
+            ReturnCode.Failure))
+end
+
+function __get_result_from_sol(::DiffEqBase.AbstractSafeNonlinearTerminationMode, tc_cache,
+        odesol)
+    u, t = last(odesol.u), last(odesol.t)
+    du = odesol(t, Val{1})
+
+    if tc_cache.retcode == DiffEqBase.NonlinearSafeTerminationReturnCode.Success
+        retcode_tc = ReturnCode.Success
+    elseif tc_cache.retcode ==
+           DiffEqBase.NonlinearSafeTerminationReturnCode.PatienceTermination
+        retcode_tc = ReturnCode.ConvergenceFailure
+    elseif tc_cache.retcode ==
+           DiffEqBase.NonlinearSafeTerminationReturnCode.ProtectiveTermination
+        retcode_tc = ReturnCode.Unstable
+    else
+        retcode_tc = ReturnCode.Default
+    end
+
+    retcode = if odesol.retcode == ReturnCode.Terminated
+        ifelse(retcode_tc != ReturnCode.Default, retcode_tc, ReturnCode.Success)
+    elseif odesol.retcode == ReturnCode.Success
+        ReturnCode.Failure
+    else
+        odesol.retcode
+    end
+
+    return du, u, retcode
+end
+
+function __get_result_from_sol(::DiffEqBase.AbstractSafeBestNonlinearTerminationMode,
+        tc_cache, odesol)
+    u, t = tc_cache.u, only(DiffEqBase.get_saved_values(tc_cache))
+    du = odesol(t, Val{1})
+
+    if tc_cache.retcode == DiffEqBase.NonlinearSafeTerminationReturnCode.Success
+        retcode_tc = ReturnCode.Success
+    elseif tc_cache.retcode ==
+           DiffEqBase.NonlinearSafeTerminationReturnCode.PatienceTermination
+        retcode_tc = ReturnCode.ConvergenceFailure
+    elseif tc_cache.retcode ==
+           DiffEqBase.NonlinearSafeTerminationReturnCode.ProtectiveTermination
+        retcode_tc = ReturnCode.Unstable
+    else
+        retcode_tc = ReturnCode.Default
+    end
+
+    retcode = if odesol.retcode == ReturnCode.Terminated
+        ifelse(retcode_tc != ReturnCode.Default, retcode_tc, ReturnCode.Success)
+    elseif odesol.retcode == ReturnCode.Success
+        ReturnCode.Failure
+    else
+        odesol.retcode
+    end
+
+    return du, u, retcode
 end
