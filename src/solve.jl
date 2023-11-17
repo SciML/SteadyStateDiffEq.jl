@@ -31,9 +31,9 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem, alg::Dy
 
     if isinplace(prob)
         du = similar(prob.u0)
-        f(du, prob.u0, prob.p, 0.0)
+        f(du, prob.u0, prob.p, first(tspan))
     else
-        du = f(prob.u0, prob.p, 0.0)
+        du = f(prob.u0, prob.p, first(tspan))
     end
 
     tc_cache = init(du, prob.u0, termination_condition, last(tspan); abstol, reltol)

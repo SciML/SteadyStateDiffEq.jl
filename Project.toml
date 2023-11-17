@@ -15,7 +15,7 @@ DiffEqBase = "6.140"
 DiffEqCallbacks = "2.34"
 Reexport = "0.2, 1.0"
 SciMLBase = "2"
-julia = "1.6"
+julia = "1.9"
 
 [extras]
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
