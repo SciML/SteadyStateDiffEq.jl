@@ -52,7 +52,7 @@ function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem, alg::Dy
         (callback = CallbackSet(callback, odesolve_kwargs[:callback]))
 
     # Construct and solve the ODEProblem
-    odeprob = ODEProblem{isinplace(f)}(f, prob.u0, tspan, prob.p)
+    odeprob = ODEProblem{isinplace(prob)}(f, prob.u0, tspan, prob.p)
     odesol = DiffEqBase.__solve(odeprob, alg.alg, args...; abstol, reltol, kwargs...,
         odesolve_kwargs..., callback, save_end = true)
 
