@@ -31,7 +31,7 @@ eqs = [
     D(y5) ~ (-1.745 * y5 + k5 * y6 + k5 * y7),
     D(y6) ~ (-k2 * y6 * y8 + k4 * y4 + k1 * y5 - k5 * y6 + k4 * y7),
     D(y7) ~ (k2 * y6 * y8 - k6 * y7),
-    D(y8) ~ (-k2 * y6 * y8 + k6 * y7),
+    D(y8) ~ (-k2 * y6 * y8 + k6 * y7)
 ]
 
 @named model = ODESystem(eqs)
@@ -49,7 +49,7 @@ u0 = [
     Dual{T, Float64, 7}(0.0, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
     Dual{T, Float64, 7}(0.0, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
     Dual{T, Float64, 7}(0.0, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
-    Dual{T, Float64, 7}(0.0057, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
+    Dual{T, Float64, 7}(0.0057, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)))
 ]
 
 p = [
@@ -62,7 +62,7 @@ p = [
         ForwardDiff.Partials((0.0, 0.0, 44.91823438292696, 0.0, 0.0, 0.0,
             0.0))),
     Dual{T, Float64, 7}(0.69, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
-    Dual{T, Float64, 7}(20.0, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
+    Dual{T, Float64, 7}(20.0, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)))
 ]
 
 prob = SteadyStateProblem(model, u0, p)
