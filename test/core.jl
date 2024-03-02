@@ -1,5 +1,5 @@
 using SteadyStateDiffEq,
-    DiffEqBase, NonlinearSolve, Sundials, OrdinaryDiffEq, DiffEqCallbacks, Test
+      DiffEqBase, NonlinearSolve, Sundials, OrdinaryDiffEq, DiffEqCallbacks, Test
 
 function f(du, u, p, t)
     du[1] = 2 - 2u[1]
@@ -79,7 +79,7 @@ for termination_condition in [
     SteadyStateDiffEqTerminationMode(), SimpleNonlinearSolveTerminationMode(),
     NormTerminationMode(), RelTerminationMode(), RelNormTerminationMode(),
     AbsTerminationMode(), AbsNormTerminationMode(), RelSafeTerminationMode(),
-    AbsSafeTerminationMode(), RelSafeBestTerminationMode(), AbsSafeBestTerminationMode(),
+    AbsSafeTerminationMode(), RelSafeBestTerminationMode(), AbsSafeBestTerminationMode()
 ]
     sol_tc = solve(prob, DynamicSS(Tsit5()); termination_condition)
     @show sol_tc.retcode, termination_condition
