@@ -15,7 +15,7 @@ end
 
 function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem, alg::DynamicSS,
         args...; abstol = 1e-8, reltol = 1e-6, odesolve_kwargs = (;),
-        save_idxs = nothing, termination_condition = SteadyStateDiffEqTerminationMode(),
+        save_idxs = nothing, termination_condition = NormTerminationMode(),
         kwargs...)
     tspan = __get_tspan(prob.u0, alg)
 
