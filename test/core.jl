@@ -78,7 +78,7 @@ sol2 = solve(prob, DynamicSS(Tsit5()); abstol = 1e-4)
 for termination_condition in [
     NormTerminationMode(SteadyStateDiffEq.infnorm), RelTerminationMode(), RelNormTerminationMode(SteadyStateDiffEq.infnorm),
     AbsTerminationMode(), AbsNormTerminationMode(SteadyStateDiffEq.infnorm), RelSafeTerminationMode(SteadyStateDiffEq.infnorm),
-    AbsSafeTerminationMode(SteadyStateDiffEq.infnorm), RelSafeBestTerminationMode(), AbsSafeBestTerminationMode()
+    AbsSafeTerminationMode(SteadyStateDiffEq.infnorm), RelSafeBestTerminationMode(SteadyStateDiffEq.infnorm), AbsSafeBestTerminationMode(SteadyStateDiffEq.infnorm)
 ]
     sol_tc = solve(prob, DynamicSS(Tsit5()); termination_condition)
     @show sol_tc.retcode, termination_condition
