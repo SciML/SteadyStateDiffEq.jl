@@ -13,9 +13,10 @@ function __get_tspan(u0, tspan::Number)
         (DiffEqBase.value(zero(tspan)), tspan))
 end
 
+infnorm(x) = norm(x,Inf)
 function DiffEqBase.__solve(prob::DiffEqBase.AbstractSteadyStateProblem, alg::DynamicSS,
         args...; abstol = 1e-8, reltol = 1e-6, odesolve_kwargs = (;),
-        save_idxs = nothing, termination_condition = NormTerminationMode(DiffEqBase.ODE_DEFAULT_NORM),
+        save_idxs = nothing, termination_condition = NormTerminationMode(infnorm),
         kwargs...)
     tspan = __get_tspan(prob.u0, alg)
 
