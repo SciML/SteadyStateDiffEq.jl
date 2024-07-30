@@ -76,8 +76,8 @@ sol2 = solve(prob, DynamicSS(Tsit5()); abstol = 1e-4)
 @test typeof(u0) == typeof(sol2.u)
 
 for termination_condition in [
-    NormTerminationMode(SteadyStateDiffEq.infnorm), RelTerminationMode(), RelNormTerminationMode(),
-    AbsTerminationMode(), AbsNormTerminationMode(), RelSafeTerminationMode(),
+    NormTerminationMode(SteadyStateDiffEq.infnorm), RelTerminationMode(), RelNormTerminationMode(SteadyStateDiffEq.infnorm),
+    AbsTerminationMode(), AbsNormTerminationMode(SteadyStateDiffEq.infnorm), RelSafeTerminationMode(),
     AbsSafeTerminationMode(), RelSafeBestTerminationMode(), AbsSafeBestTerminationMode()
 ]
     sol_tc = solve(prob, DynamicSS(Tsit5()); termination_condition)
