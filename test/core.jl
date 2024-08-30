@@ -23,13 +23,13 @@ end
     du = zeros(2)
     p = nothing
 
-    sol = solve(prob, DynamicSS(Rodas5()); abstol = 1e-9, reltol = 1e-9)
+    sol = solve(prob, DynamicSS(Tsit5()); abstol = 1e-9, reltol = 1e-9)
     @test SciMLBase.successful_retcode(sol.retcode)
 
     f(du, sol.u, p, 0)
     @test du≈[0, 0] atol=1e-7
 
-    sol = solve(prob, DynamicSS(Rodas5(), tspan = 1e-3))
+    sol = solve(prob, DynamicSS(Tsit5(), tspan = 1e-3))
     @test sol.retcode != ReturnCode.Success
 
     sol = solve(prob, DynamicSS(CVODE_BDF()), dt = 1.0)
@@ -77,8 +77,10 @@ sol2 = solve(prob, DynamicSS(Tsit5()); abstol = 1e-4)
 
 for termination_condition in [
     NormTerminationMode(SteadyStateDiffEq.infnorm), RelTerminationMode(), RelNormTerminationMode(SteadyStateDiffEq.infnorm),
-    AbsTerminationMode(), AbsNormTerminationMode(SteadyStateDiffEq.infnorm), RelSafeTerminationMode(SteadyStateDiffEq.infnorm),
-    AbsSafeTerminationMode(SteadyStateDiffEq.infnorm), RelSafeBestTerminationMode(SteadyStateDiffEq.infnorm), AbsSafeBestTerminationMode(SteadyStateDiffEq.infnorm)
+    AbsTerminationMode(), AbsNormTerminationMode(SteadyStateDiffEq.infnorm),
+    RelSafeTerminationMode(SteadyStateDiffEq.infnorm),
+    AbsSafeTerminationMode(SteadyStateDiffEq.infnorm), RelSafeBestTerminationMode(SteadyStateDiffEq.infnorm),
+    AbsSafeBestTerminationMode(SteadyStateDiffEq.infnorm)
 ]
     sol_tc = solve(prob, DynamicSS(Tsit5()); termination_condition)
     @show sol_tc.retcode, termination_condition
@@ -104,7 +106,7 @@ prob = SteadyStateProblem(f, u0)
 saved_values = SavedValues(Float64, Vector{Float64})
 cb = SavingCallback((u, t, integrator) -> copy(u), saved_values, save_everystep = true,
     save_start = true)
-sol = solve(prob, DynamicSS(Rodas5()); callback = cb, save_everystep = true,
+sol = solve(prob, DynamicSS(Tsit5()); callback = cb, save_everystep = true,
     save_start = true)
 @test SciMLBase.successful_retcode(sol.retcode)
 @test isapprox(saved_values.saveval[end], sol.u)

@@ -1,4 +1,4 @@
-abstract type SteadyStateDiffEqAlgorithm <: DiffEqBase.AbstractSteadyStateAlgorithm end
+abstract type SteadyStateDiffEqAlgorithm <: SciMLBase.AbstractSteadyStateAlgorithm end
 
 """
     SSRootfind(alg = nothing)
