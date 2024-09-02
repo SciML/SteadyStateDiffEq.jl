@@ -1,7 +1,7 @@
 function SciMLBase.__solve(prob::SciMLBase.AbstractSteadyStateProblem, alg::SSRootfind,
         args...; kwargs...)
     nlprob = NonlinearProblem(prob)
-    nlsol = SciMLBase.__solve(nlprob, alg.alg, args...; kwargs...)
+    nlsol = solve(nlprob, alg.alg, args...; kwargs...)
     return SciMLBase.build_solution(prob, SSRootfind(nlsol.alg), nlsol.u, nlsol.resid;
         nlsol.retcode, nlsol.stats, nlsol.left, nlsol.right, original = nlsol)
 end
@@ -53,7 +53,7 @@ function SciMLBase.__solve(prob::SciMLBase.AbstractSteadyStateProblem, alg::Dyna
 
     # Construct and solve the ODEProblem
     odeprob = ODEProblem{isinplace(prob)}(f, prob.u0, tspan, prob.p)
-    odesol = SciMLBase.__solve(odeprob, alg.alg, args...; abstol, reltol, kwargs...,
+    odesol = solve(odeprob, alg.alg, args...; abstol, reltol, kwargs...,
         odesolve_kwargs..., callback, save_end = true)
 
     resid, u, retcode = __get_result_from_sol(termination_condition, tc_cache, odesol)
