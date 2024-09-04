@@ -35,9 +35,14 @@ end
     sol = solve(prob, DynamicSS(CVODE_BDF()), dt = 1.0)
     @test SciMLBase.successful_retcode(sol.retcode)
 
+    # test autodiff
+    sol = solve(prob, DynamicSS(Rodas5P()))
+
+    @test SciMLBase.successful_retcode(sol.retcode)
+      
     # scalar save_idxs
     scalar_sol = solve(prob, DynamicSS(CVODE_BDF()), dt = 1.0, save_idxs = 1)
-    @test scalar_sol[1] ≈ sol[1]
+    @test scalar_sol[1] ≈ sol[1] atol=1e-6
 
     f(du, sol.u, p, 0)
     @test du≈[0, 0] atol=1e-6

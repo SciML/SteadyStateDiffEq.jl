@@ -52,7 +52,7 @@ function SciMLBase.__solve(prob::SciMLBase.AbstractSteadyStateProblem, alg::Dyna
         (callback = CallbackSet(callback, odesolve_kwargs[:callback]))
 
     # Construct and solve the ODEProblem
-    odeprob = ODEProblem{isinplace(prob)}(f, prob.u0, tspan, prob.p)
+    odeprob = ODEProblem{isinplace(prob), true}(f, prob.u0, tspan, prob.p)
     odesol = solve(odeprob, alg.alg, args...; abstol, reltol, kwargs...,
         odesolve_kwargs..., callback, save_end = true)
 
