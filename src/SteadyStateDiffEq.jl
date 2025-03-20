@@ -4,10 +4,7 @@ using Reexport: @reexport
 @reexport using DiffEqBase
 
 using ConcreteStructs: @concrete
-using DiffEqBase: DiffEqBase, AbstractNonlinearTerminationMode,
-                  AbstractSafeNonlinearTerminationMode,
-                  AbstractSafeBestNonlinearTerminationMode,
-                  NonlinearSafeTerminationReturnCode, NormTerminationMode
+using NonlinearSolveBase
 using DiffEqCallbacks: TerminateSteadyState
 using LinearAlgebra: norm
 using SciMLBase: SciMLBase, CallbackSet, NonlinearProblem, ODEProblem,
