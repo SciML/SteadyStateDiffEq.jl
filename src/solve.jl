@@ -78,16 +78,7 @@ end
 function __get_result_from_sol(::AbstractSafeNonlinearTerminationMode, tc_cache, odesol)
     u, t = last(odesol.u), last(odesol.t)
     du = odesol(t, Val{1})
-
-    if tc_cache.retcode == NonlinearSafeTerminationReturnCode.Success
-        retcode_tc = ReturnCode.Success
-    elseif tc_cache.retcode == NonlinearSafeTerminationReturnCode.PatienceTermination
-        retcode_tc = ReturnCode.ConvergenceFailure
-    elseif tc_cache.retcode == NonlinearSafeTerminationReturnCode.ProtectiveTermination
-        retcode_tc = ReturnCode.Unstable
-    else
-        retcode_tc = ReturnCode.Default
-    end
+    retcode_tc = tc_cache.retcode
 
     retcode = if odesol.retcode == ReturnCode.Terminated
         ifelse(retcode_tc != ReturnCode.Default, retcode_tc, ReturnCode.Success)
@@ -103,16 +94,7 @@ end
 function __get_result_from_sol(::AbstractSafeBestNonlinearTerminationMode, tc_cache, odesol)
     u, t = tc_cache.u, only(DiffEqBase.get_saved_values(tc_cache))
     du = odesol(t, Val{1})
-
-    if tc_cache.retcode == NonlinearSafeTerminationReturnCode.Success
-        retcode_tc = ReturnCode.Success
-    elseif tc_cache.retcode == NonlinearSafeTerminationReturnCode.PatienceTermination
-        retcode_tc = ReturnCode.ConvergenceFailure
-    elseif tc_cache.retcode == NonlinearSafeTerminationReturnCode.ProtectiveTermination
-        retcode_tc = ReturnCode.Unstable
-    else
-        retcode_tc = ReturnCode.Default
-    end
+    retcode_tc = tc_cache.retcode
 
     retcode = if odesol.retcode == ReturnCode.Terminated
         ifelse(retcode_tc != ReturnCode.Default, retcode_tc, ReturnCode.Success)
