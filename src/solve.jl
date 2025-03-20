@@ -36,7 +36,7 @@ function SciMLBase.__solve(prob::SciMLBase.AbstractSteadyStateProblem, alg::Dyna
         du = f(prob.u0, prob.p, first(tspan))
     end
 
-    tc_cache = init(du, prob.u0, termination_condition, last(tspan); abstol, reltol)
+    tc_cache = init(du, prob.u0, termination_condition, du, prob.u0; abstol, reltol)
     abstol = DiffEqBase.get_abstol(tc_cache)
     reltol = DiffEqBase.get_reltol(tc_cache)
 
