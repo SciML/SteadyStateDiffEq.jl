@@ -5,6 +5,7 @@ using Reexport: @reexport
 
 using ConcreteStructs: @concrete
 using NonlinearSolveBase
+import DiffEqBase
 using DiffEqCallbacks: TerminateSteadyState
 using LinearAlgebra: norm
 using SciMLBase: SciMLBase, CallbackSet, NonlinearProblem, ODEProblem,
