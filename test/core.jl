@@ -1,5 +1,4 @@
-using SteadyStateDiffEq,
-      DiffEqBase, NonlinearSolve, Sundials, OrdinaryDiffEq, DiffEqCallbacks, Test
+using SteadyStateDiffEq, NonlinearSolve, Sundials, OrdinaryDiffEq, DiffEqCallbacks, Test
 
 function f(du, u, p, t)
     du[1] = 2 - 2u[1]
