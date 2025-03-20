@@ -5,6 +5,10 @@ using Reexport: @reexport
 
 using ConcreteStructs: @concrete
 using NonlinearSolveBase
+using NonlinearSolveBase: AbstractNonlinearTerminationMode,
+                   AbstractSafeNonlinearTerminationMode,
+                   AbstractSafeBestNonlinearTerminationMode,
+                   NonlinearSafeTerminationReturnCode, NormTerminationMode
 using DiffEqCallbacks: TerminateSteadyState
 using LinearAlgebra: norm
 using SciMLBase: SciMLBase, CallbackSet, NonlinearProblem, ODEProblem,
