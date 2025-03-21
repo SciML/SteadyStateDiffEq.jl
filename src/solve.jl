@@ -15,7 +15,7 @@ end
 
 function SciMLBase.__solve(prob::SciMLBase.AbstractSteadyStateProblem, alg::DynamicSS,
         args...; abstol = 1e-8, reltol = 1e-6, odesolve_kwargs = (;),
-        save_idxs = nothing, termination_condition = NormTerminationMode(infnorm),
+        save_idxs = nothing, termination_condition = NonlinearSolveBase.NormTerminationMode(infnorm),
         kwargs...)
     tspan = __get_tspan(prob.u0, alg)
 
@@ -36,9 +36,9 @@ function SciMLBase.__solve(prob::SciMLBase.AbstractSteadyStateProblem, alg::Dyna
         du = f(prob.u0, prob.p, first(tspan))
     end
 
-    tc_cache = init(du, prob.u0, termination_condition, last(tspan); abstol, reltol)
-    abstol = DiffEqBase.get_abstol(tc_cache)
-    reltol = DiffEqBase.get_reltol(tc_cache)
+    tc_cache = init(prob, termination_condition, du, prob.u0; abstol, reltol)
+    abstol = NonlinearSolveBase.get_abstol(tc_cache)
+    reltol = NonlinearSolveBase.get_reltol(tc_cache)
 
     function terminate_function(u, t, integrator)
         return tc_cache(get_du(integrator), integrator.u, integrator.uprev, t)
@@ -78,16 +78,7 @@ end
 function __get_result_from_sol(::AbstractSafeNonlinearTerminationMode, tc_cache, odesol)
     u, t = last(odesol.u), last(odesol.t)
     du = odesol(t, Val{1})
-
-    if tc_cache.retcode == NonlinearSafeTerminationReturnCode.Success
-        retcode_tc = ReturnCode.Success
-    elseif tc_cache.retcode == NonlinearSafeTerminationReturnCode.PatienceTermination
-        retcode_tc = ReturnCode.ConvergenceFailure
-    elseif tc_cache.retcode == NonlinearSafeTerminationReturnCode.ProtectiveTermination
-        retcode_tc = ReturnCode.Unstable
-    else
-        retcode_tc = ReturnCode.Default
-    end
+    retcode_tc = tc_cache.retcode
 
     retcode = if odesol.retcode == ReturnCode.Terminated
         ifelse(retcode_tc != ReturnCode.Default, retcode_tc, ReturnCode.Success)
@@ -103,16 +94,7 @@ end
 function __get_result_from_sol(::AbstractSafeBestNonlinearTerminationMode, tc_cache, odesol)
     u, t = tc_cache.u, only(DiffEqBase.get_saved_values(tc_cache))
     du = odesol(t, Val{1})
-
-    if tc_cache.retcode == NonlinearSafeTerminationReturnCode.Success
-        retcode_tc = ReturnCode.Success
-    elseif tc_cache.retcode == NonlinearSafeTerminationReturnCode.PatienceTermination
-        retcode_tc = ReturnCode.ConvergenceFailure
-    elseif tc_cache.retcode == NonlinearSafeTerminationReturnCode.ProtectiveTermination
-        retcode_tc = ReturnCode.Unstable
-    else
-        retcode_tc = ReturnCode.Default
-    end
+    retcode_tc = tc_cache.retcode
 
     retcode = if odesol.retcode == ReturnCode.Terminated
         ifelse(retcode_tc != ReturnCode.Default, retcode_tc, ReturnCode.Success)
