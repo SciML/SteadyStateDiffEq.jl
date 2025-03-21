@@ -1,5 +1,8 @@
 using SteadyStateDiffEq, NonlinearSolve, Sundials, OrdinaryDiffEq, DiffEqCallbacks, Test
 using NonlinearSolve.NonlinearSolveBase
+using NonlinearSolve.NonlinearSolveBase: NormTerminationMode, RelTerminationMode, RelNormTerminationMode
+      AbsTerminationMode, AbsNormTerminationMode, RelSafeTerminationMode, AbsSafeTerminationMode,
+      RelSafeBestTerminationMode, AbsSafeBestTerminationMode
 
 function f(du, u, p, t)
     du[1] = 2 - 2u[1]
