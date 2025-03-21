@@ -1,6 +1,6 @@
 using SteadyStateDiffEq, NonlinearSolve, Sundials, OrdinaryDiffEq, DiffEqCallbacks, Test
 using NonlinearSolve.NonlinearSolveBase
-using NonlinearSolve.NonlinearSolveBase: NormTerminationMode, RelTerminationMode, RelNormTerminationMode
+using NonlinearSolve.NonlinearSolveBase: NormTerminationMode, RelTerminationMode, RelNormTerminationMode,
       AbsTerminationMode, AbsNormTerminationMode, RelSafeTerminationMode, AbsSafeTerminationMode,
       RelSafeBestTerminationMode, AbsSafeBestTerminationMode
 
