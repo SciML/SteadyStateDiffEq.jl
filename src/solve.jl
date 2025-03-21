@@ -37,8 +37,8 @@ function SciMLBase.__solve(prob::SciMLBase.AbstractSteadyStateProblem, alg::Dyna
     end
 
     tc_cache = init(prob, termination_condition, du, prob.u0; abstol, reltol)
-    abstol = DiffEqBase.get_abstol(tc_cache)
-    reltol = DiffEqBase.get_reltol(tc_cache)
+    abstol = NonlinearSolveBase.get_abstol(tc_cache)
+    reltol = NonlinearSolveBase.get_reltol(tc_cache)
 
     function terminate_function(u, t, integrator)
         return tc_cache(get_du(integrator), integrator.u, integrator.uprev, t)
