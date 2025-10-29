@@ -16,7 +16,7 @@ end
 function SciMLBase.__solve(prob::SciMLBase.AbstractSteadyStateProblem, alg::DynamicSS,
         args...; abstol = 1e-8, reltol = 1e-6, odesolve_kwargs = (;),
         save_idxs = nothing, termination_condition = NonlinearSolveBase.NormTerminationMode(infnorm),
-        alias_u0 = false, kwargs...)
+        alias = SciMLBase.NonlinearAliasSpecifier(), kwargs...)
     tspan = __get_tspan(prob.u0, alg)
 
     f = if prob isa SteadyStateProblem
@@ -55,7 +55,8 @@ function SciMLBase.__solve(prob::SciMLBase.AbstractSteadyStateProblem, alg::Dyna
     odeprob = ODEProblem{isinplace(prob), true}(f, prob.u0, tspan, prob.p)
     odesol = solve(odeprob, alg.alg, args...; abstol, reltol, kwargs...,
         odesolve_kwargs..., callback, save_end = true,
-        alias = SciMLBase.ODEAliasSpecifier(; alias_u0))
+        alias = SciMLBase.ODEAliasSpecifier(; alias_p = alias.alias_p,
+            alias_f = alias.alias_f, alias_u0 = alias.alias_u0))
 
     resid, u, retcode = __get_result_from_sol(termination_condition, tc_cache, odesol)
 
