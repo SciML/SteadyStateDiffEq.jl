@@ -34,7 +34,7 @@ eqs = [
     D(y8) ~ (-k2 * y6 * y8 + k6 * y7)
 ]
 
-@mtkbuild model = ODESystem(eqs, t)
+@mtkcompile model = System(eqs, t)
 
 struct Tag end
 T = typeof(ForwardDiff.Tag(Tag(), Float64))
