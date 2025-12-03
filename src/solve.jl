@@ -50,7 +50,7 @@ function SciMLBase.__solve(prob::SciMLBase.AbstractSteadyStateProblem, alg::Dyna
     haskey(kwargs, :callback) && (callback = CallbackSet(callback, kwargs[:callback]))
     haskey(odesolve_kwargs, :callback) &&
         (callback = CallbackSet(callback, odesolve_kwargs[:callback]))
-    kwargs = pairs(merge((; kwargs...), haskey(kwargs, :verbose) ? (verbose=true,) : (;)))
+    kwargs = pairs(merge((; kwargs...), haskey(kwargs, :verbose) ? (verbose = true,) : (;)))
     # Construct and solve the ODEProblem
     odeprob = ODEProblem{isinplace(prob), true}(f, prob.u0, tspan, prob.p)
     odesol = solve(odeprob, alg.alg, args...; abstol, reltol, kwargs...,
