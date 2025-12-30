@@ -19,6 +19,7 @@ const infnorm = Base.Fix2(norm, Inf)
 
 include("algorithms.jl")
 include("solve.jl")
+include("precompilation.jl")
 
 export SSRootfind, DynamicSS
 
