@@ -43,7 +43,7 @@ sol = solve(prob, DynamicSS(CVODE_BDF()); dt = 1.0)
 
 !!! note
 
-    If you use `CVODE_BDF` you may need to give a starting `dt` via `dt = ....`.*
+    If you use `CVODE_BDF` you may need to give a starting `dt` via `dt = ....`.
 """
 @concrete struct DynamicSS <: SteadyStateDiffEqAlgorithm
     alg
