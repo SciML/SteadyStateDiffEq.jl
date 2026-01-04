@@ -60,8 +60,10 @@ end
 SciMLBase.isadaptive(::SSRootfind) = false
 
 for aType in (:SSRootfind, :DynamicSS),
-    op in (:isadaptive, :isautodifferentiable, :allows_arbitrary_number_types,
-        :allowscomplex)
+        op in (
+            :isadaptive, :isautodifferentiable, :allows_arbitrary_number_types,
+            :allowscomplex,
+        )
 
     op == :isadaptive && aType == :SSRootfind && continue
 
