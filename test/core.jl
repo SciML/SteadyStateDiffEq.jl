@@ -1,8 +1,11 @@
 using SteadyStateDiffEq, NonlinearSolve, Sundials, OrdinaryDiffEq, DiffEqCallbacks, Test
 using NonlinearSolve.NonlinearSolveBase
-using NonlinearSolve.NonlinearSolveBase: NormTerminationMode, RelTerminationMode,
+using NonlinearSolve.NonlinearSolveBase:
+    NormTerminationMode,
+    RelTerminationMode,
     RelNormTerminationMode,
-    AbsTerminationMode, AbsNormTerminationMode
+    AbsTerminationMode,
+    AbsNormTerminationMode
 
 function f(du, u, p, t)
     du[1] = 2 - 2u[1]
@@ -13,9 +16,10 @@ u0 = zeros(2)
 prob = SteadyStateProblem(f, u0)
 
 @testset "NonlinearSolve: $(nameof(typeof(alg)))" for alg in (
-        nothing,
-        NewtonRaphson(; autodiff = AutoFiniteDiff()), KINSOL(),
-    )
+    nothing,
+    NewtonRaphson(; autodiff = AutoFiniteDiff()),
+    KINSOL(),
+)
     sol = solve(prob, SSRootfind(alg))
     @test SciMLBase.successful_retcode(sol.retcode)
 
@@ -86,9 +90,12 @@ sol2 = solve(prob, DynamicSS(Tsit5()); abstol = 1.0e-4)
 @test typeof(u0) == typeof(sol2.u)
 
 for termination_condition in [
-        NormTerminationMode(SteadyStateDiffEq.infnorm), RelTerminationMode(), RelNormTerminationMode(SteadyStateDiffEq.infnorm),
-        AbsTerminationMode(), AbsNormTerminationMode(SteadyStateDiffEq.infnorm),
-    ]
+    NormTerminationMode(SteadyStateDiffEq.infnorm),
+    RelTerminationMode(),
+    RelNormTerminationMode(SteadyStateDiffEq.infnorm),
+    AbsTerminationMode(),
+    AbsNormTerminationMode(SteadyStateDiffEq.infnorm),
+]
     sol_tc = solve(prob, DynamicSS(Tsit5()); termination_condition)
     @show sol_tc.retcode, termination_condition
     @test SciMLBase.successful_retcode(sol_tc.retcode)
@@ -112,12 +119,12 @@ u0 = zeros(2)
 prob = SteadyStateProblem(f, u0)
 saved_values = SavedValues(Float64, Vector{Float64})
 cb = SavingCallback(
-    (u, t, integrator) -> copy(u), saved_values, save_everystep = true,
-    save_start = true
+    (u, t, integrator) -> copy(u),
+    saved_values,
+    save_everystep = true,
+    save_start = true,
 )
-sol = solve(
-    prob, DynamicSS(Tsit5()); callback = cb, save_everystep = true,
-    save_start = true
-)
+sol =
+    solve(prob, DynamicSS(Tsit5()); callback = cb, save_everystep = true, save_start = true)
 @test SciMLBase.successful_retcode(sol.retcode)
 @test isapprox(saved_values.saveval[end], sol.u)

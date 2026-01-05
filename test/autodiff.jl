@@ -40,47 +40,32 @@ struct Tag end
 T = typeof(ForwardDiff.Tag(Tag(), Float64))
 
 u0 = [
-    Dual{T, Float64, 7}(
+    Dual{T,Float64,7}(
         1.8983788068509213,
-        ForwardDiff.Partials(
-            (
-                0.6970981087506788, 0.0, 0.0, 0.0, 0.0, 0.0,
-                0.0,
-            )
-        )
+        ForwardDiff.Partials((0.6970981087506788, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)),
     ),
-    Dual{T, Float64, 7}(0.0, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
-    Dual{T, Float64, 7}(0.0, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
-    Dual{T, Float64, 7}(0.0, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
-    Dual{T, Float64, 7}(0.0, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
-    Dual{T, Float64, 7}(0.0, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
-    Dual{T, Float64, 7}(0.0, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
-    Dual{T, Float64, 7}(0.0057, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
+    Dual{T,Float64,7}(0.0, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
+    Dual{T,Float64,7}(0.0, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
+    Dual{T,Float64,7}(0.0, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
+    Dual{T,Float64,7}(0.0, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
+    Dual{T,Float64,7}(0.0, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
+    Dual{T,Float64,7}(0.0, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
+    Dual{T,Float64,7}(0.0057, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
 ]
 
 p = [
-    Dual{T, Float64, 7}(
+    Dual{T,Float64,7}(
         1.5174072564237708,
-        ForwardDiff.Partials(
-            (
-                0.0, 0.38355212192378396, 0.0, 0.0, 0.0, 0.0,
-                0.0,
-            )
-        )
+        ForwardDiff.Partials((0.0, 0.38355212192378396, 0.0, 0.0, 0.0, 0.0, 0.0)),
     ),
-    Dual{T, Float64, 7}(0.43, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
-    Dual{T, Float64, 7}(8.32, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
-    Dual{T, Float64, 7}(
+    Dual{T,Float64,7}(0.43, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
+    Dual{T,Float64,7}(8.32, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
+    Dual{T,Float64,7}(
         268.1197063467946,
-        ForwardDiff.Partials(
-            (
-                0.0, 0.0, 44.91823438292696, 0.0, 0.0, 0.0,
-                0.0,
-            )
-        )
+        ForwardDiff.Partials((0.0, 0.0, 44.91823438292696, 0.0, 0.0, 0.0, 0.0)),
     ),
-    Dual{T, Float64, 7}(0.69, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
-    Dual{T, Float64, 7}(20.0, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
+    Dual{T,Float64,7}(0.69, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
+    Dual{T,Float64,7}(20.0, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
 ]
 
 prob = SteadyStateProblem(model, u0, p)

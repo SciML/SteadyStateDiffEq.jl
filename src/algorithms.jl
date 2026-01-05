@@ -12,7 +12,7 @@ given as the first argument.
     loaded.
 """
 @concrete struct SSRootfind <: SteadyStateDiffEqAlgorithm
-    alg
+    alg::Any
 end
 
 SSRootfind() = SSRootfind(nothing)
@@ -46,8 +46,8 @@ sol = solve(prob, DynamicSS(CVODE_BDF()); dt = 1.0)
     If you use `CVODE_BDF` you may need to give a starting `dt` via `dt = ....`.
 """
 @concrete struct DynamicSS <: SteadyStateDiffEqAlgorithm
-    alg
-    tspan
+    alg::Any
+    tspan::Any
 end
 
 DynamicSS(alg = nothing; tspan = Inf) = DynamicSS(alg, tspan)
@@ -60,10 +60,8 @@ end
 SciMLBase.isadaptive(::SSRootfind) = false
 
 for aType in (:SSRootfind, :DynamicSS),
-        op in (
-            :isadaptive, :isautodifferentiable, :allows_arbitrary_number_types,
-            :allowscomplex,
-        )
+    op in
+    (:isadaptive, :isautodifferentiable, :allows_arbitrary_number_types, :allowscomplex)
 
     op == :isadaptive && aType == :SSRootfind && continue
 

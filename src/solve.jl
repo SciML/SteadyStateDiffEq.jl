@@ -1,12 +1,21 @@
 function SciMLBase.__solve(
-        prob::SciMLBase.AbstractSteadyStateProblem, alg::SSRootfind,
-        args...; kwargs...
-    )
+    prob::SciMLBase.AbstractSteadyStateProblem,
+    alg::SSRootfind,
+    args...;
+    kwargs...,
+)
     nlprob = NonlinearProblem(prob)
     nlsol = solve(nlprob, alg.alg, args...; kwargs...)
     return SciMLBase.build_solution(
-        prob, SSRootfind(nlsol.alg), nlsol.u, nlsol.resid;
-        nlsol.retcode, nlsol.stats, nlsol.left, nlsol.right, original = nlsol
+        prob,
+        SSRootfind(nlsol.alg),
+        nlsol.u,
+        nlsol.resid;
+        nlsol.retcode,
+        nlsol.stats,
+        nlsol.left,
+        nlsol.right,
+        original = nlsol,
     )
 end
 
@@ -14,16 +23,23 @@ __get_tspan(u0, alg::DynamicSS) = __get_tspan(u0, alg.tspan)
 __get_tspan(u0, tspan::Tuple) = tspan
 function __get_tspan(u0, tspan::Number)
     return convert.(
-        DiffEqBase.value(real(eltype(u0))), (DiffEqBase.value(zero(tspan)), tspan)
+        DiffEqBase.value(real(eltype(u0))),
+        (DiffEqBase.value(zero(tspan)), tspan),
     )
 end
 
 function SciMLBase.__solve(
-        prob::SciMLBase.AbstractSteadyStateProblem, alg::DynamicSS,
-        args...; abstol = 1.0e-8, reltol = 1.0e-6, odesolve_kwargs = (;),
-        save_idxs = nothing, termination_condition = NonlinearSolveBase.NormTerminationMode(infnorm),
-        alias = SciMLBase.NonlinearAliasSpecifier(), kwargs...
-    )
+    prob::SciMLBase.AbstractSteadyStateProblem,
+    alg::DynamicSS,
+    args...;
+    abstol = 1.0e-8,
+    reltol = 1.0e-6,
+    odesolve_kwargs = (;),
+    save_idxs = nothing,
+    termination_condition = NonlinearSolveBase.NormTerminationMode(infnorm),
+    alias = SciMLBase.NonlinearAliasSpecifier(),
+    kwargs...,
+)
     tspan = __get_tspan(prob.u0, alg)
 
     f = if prob isa SteadyStateProblem
@@ -51,24 +67,30 @@ function SciMLBase.__solve(
         return tc_cache(get_du(integrator), integrator.u, integrator.uprev, t)
     end
 
-    callback = TerminateSteadyState(
-        abstol, reltol, terminate_function;
-        wrap_test = Val(false)
-    )
+    callback =
+        TerminateSteadyState(abstol, reltol, terminate_function; wrap_test = Val(false))
 
     haskey(kwargs, :callback) && (callback = CallbackSet(callback, kwargs[:callback]))
     haskey(odesolve_kwargs, :callback) &&
         (callback = CallbackSet(callback, odesolve_kwargs[:callback]))
     kwargs = pairs(merge((; kwargs...), haskey(kwargs, :verbose) ? (verbose = true,) : (;)))
     # Construct and solve the ODEProblem
-    odeprob = ODEProblem{isinplace(prob), true}(f, prob.u0, tspan, prob.p)
+    odeprob = ODEProblem{isinplace(prob),true}(f, prob.u0, tspan, prob.p)
     odesol = solve(
-        odeprob, alg.alg, args...; abstol, reltol, kwargs...,
-        odesolve_kwargs..., callback, save_end = true,
+        odeprob,
+        alg.alg,
+        args...;
+        abstol,
+        reltol,
+        kwargs...,
+        odesolve_kwargs...,
+        callback,
+        save_end = true,
         alias = SciMLBase.ODEAliasSpecifier(;
             alias_p = alias.alias_p,
-            alias_f = alias.alias_f, alias_u0 = alias.alias_u0
-        )
+            alias_f = alias.alias_f,
+            alias_u0 = alias.alias_u0,
+        ),
     )
 
     resid, u, retcode = __get_result_from_sol(termination_condition, tc_cache, odesol)
@@ -79,8 +101,12 @@ function SciMLBase.__solve(
     end
 
     return SciMLBase.build_solution(
-        prob, DynamicSS(odesol.alg, alg.tspan), u, resid;
-        retcode, original = odesol
+        prob,
+        DynamicSS(odesol.alg, alg.tspan),
+        u,
+        resid;
+        retcode,
+        original = odesol,
     )
 end
 
@@ -88,10 +114,12 @@ function __get_result_from_sol(::AbstractNonlinearTerminationMode, tc_cache, ode
     u, t = last(odesol.u), last(odesol.t)
     du = odesol(t, Val{1})
     return (
-        du, u,
+        du,
+        u,
         ifelse(
-            odesol.retcode == ReturnCode.Terminated, ReturnCode.Success,
-            ReturnCode.Failure
+            odesol.retcode == ReturnCode.Terminated,
+            ReturnCode.Success,
+            ReturnCode.Failure,
         ),
     )
 end
