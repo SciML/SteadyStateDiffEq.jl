@@ -7,4 +7,7 @@ using SafeTestsets, Test
     @safetestset "Autodiff Tests" begin
         include("autodiff.jl")
     end
+    @safetestset "JET Static Analysis" begin
+        include("jet.jl")
+    end
 end
