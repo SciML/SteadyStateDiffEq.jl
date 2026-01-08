@@ -51,3 +51,4 @@ For more details, see the [SciML documentation](https://docs.sciml.ai/DiffEqDocs
     odesolve and the termination, specify `odesolve_kwargs` in `solve`.
  3. The deprecated termination conditions are dropped, see [NonlinearSolve.jl Docs](https://docs.sciml.ai/NonlinearSolve/stable/basics/TerminationCondition/)
     for details on this.
+
