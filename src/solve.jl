@@ -113,7 +113,7 @@ function __get_result_from_sol(::AbstractSafeNonlinearTerminationMode, tc_cache,
 end
 
 function __get_result_from_sol(::AbstractSafeBestNonlinearTerminationMode, tc_cache, odesol)
-    u, t = tc_cache.u, only(DiffEqBase.get_saved_values(tc_cache))
+    u, t = tc_cache.u, only(tc_cache.saved_values)
     du = odesol(t, Val{1})
     retcode_tc = tc_cache.retcode
 
