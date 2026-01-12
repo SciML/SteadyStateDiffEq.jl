@@ -16,12 +16,26 @@ jobs:
   tests:
     name: "Tests"
     strategy:
+      fail-fast: false
       matrix:
         version:
           - "1"
           - "lts"
           - "pre"
+        group:
+          - Core
+          - nopre
+        exclude:
+          - version: "pre"
+            group: nopre
+        include:
+          - coverage: false
+          - version: "1"
+            group: Core
+            coverage: true
     uses: "SciML/.github/.github/workflows/tests.yml@v1"
     with:
+      group: ${{ matrix.group }}
       julia-version: "${{ matrix.version }}"
+      coverage: ${{ matrix.coverage }}
     secrets: "inherit"
