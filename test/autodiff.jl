@@ -1,8 +1,8 @@
 using ModelingToolkit, OrdinaryDiffEq, ForwardDiff, Test, SteadyStateDiffEq
 using ForwardDiff: Dual
 
+@independent_variables t
 @variables begin
-    t
     y1(t) = 1.0
     y2(t) = 0.0
     y3(t) = 0.0
@@ -83,6 +83,8 @@ p = [
     Dual{T, Float64, 7}(20.0, ForwardDiff.Partials((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))),
 ]
 
-prob = SteadyStateProblem(model, u0, p)
-alg = DynamicSS(QNDF())
+prob = SteadyStateProblem(
+    model, merge(Dict(unknowns(model) .=> u0), Dict(parameters(model) .=> p))
+)
+alg = DynamicSS(Rodas5P())
 sol = solve(prob, alg)
