@@ -80,7 +80,7 @@ function SciMLBase.__solve(
 
     return SciMLBase.build_solution(
         prob, DynamicSS(odesol.alg, alg.tspan), u, resid;
-        retcode, original = odesol
+        retcode, odesol.stats, original = odesol
     )
 end
 

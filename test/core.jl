@@ -30,6 +30,8 @@ end
 
     sol = solve(prob, DynamicSS(Tsit5()); abstol = 1.0e-9, reltol = 1.0e-9)
     @test SciMLBase.successful_retcode(sol.retcode)
+    @test sol.stats !== nothing
+    @test sol.stats === sol.original.stats
 
     f(du, sol.u, p, 0)
     @test du ≈ [0, 0] atol = 1.0e-7
