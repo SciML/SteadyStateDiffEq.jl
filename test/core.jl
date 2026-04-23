@@ -1,4 +1,5 @@
 using SteadyStateDiffEq, NonlinearSolve, Sundials, OrdinaryDiffEq, DiffEqCallbacks, Test
+using DiffEqBase: DEVerbosity
 using NonlinearSolve.NonlinearSolveBase
 using NonlinearSolve.NonlinearSolveBase: NormTerminationMode, RelTerminationMode,
     RelNormTerminationMode,
@@ -123,3 +124,38 @@ sol = solve(
 )
 @test SciMLBase.successful_retcode(sol.retcode)
 @test isapprox(saved_values.saveval[end], sol.u)
+
+# Verbose kwarg contract for DynamicSS:
+# The outer `solve` is reached via either `NonlinearSolve.solve` (which forwards
+# a `NonlinearVerbosity`) or directly. The inner ODE solve only understands
+# `Val{true/false}`, `Bool`, or `DEVerbosity`, so `DynamicSS.__solve` strips the
+# top-level `verbose` kwarg unconditionally and expects users to thread an
+# ODE-layer verbosity through `odesolve_kwargs = (verbose = ..., )` if they
+# want to override the ODE layer's `DEFAULT_VERBOSE`.
+@testset "DynamicSS verbose kwarg handling" begin
+    u0 = zeros(2)
+    prob = SteadyStateProblem(f, u0)
+
+    # Default path: no verbose in either kwargs or odesolve_kwargs.
+    sol = solve(prob, DynamicSS(Tsit5()))
+    @test SciMLBase.successful_retcode(sol.retcode)
+
+    # NonlinearSolve-layer verbosity in outer kwargs gets stripped before the
+    # inner ODE solve (otherwise the ODE's `_process_verbose_param` would
+    # MethodError on `NonlinearVerbosity`).
+    sol = solve(
+        prob, DynamicSS(Tsit5());
+        verbose = NonlinearSolveBase.NonlinearVerbosity()
+    )
+    @test SciMLBase.successful_retcode(sol.retcode)
+
+    # ODE-layer verbosity: threaded through `odesolve_kwargs` as a proper
+    # `DEVerbosity`. DiffEqBase v7 intentionally rejects a bare `Bool` here
+    # (`_process_verbose_param(::Bool)` throws), so callers must pass a
+    # `DEVerbosity` or one of the `SciMLLogging` presets.
+    sol = solve(
+        prob, DynamicSS(Tsit5());
+        odesolve_kwargs = (verbose = DEVerbosity(),)
+    )
+    @test SciMLBase.successful_retcode(sol.retcode)
+end
