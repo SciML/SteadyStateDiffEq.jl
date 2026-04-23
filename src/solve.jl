@@ -59,13 +59,7 @@ function SciMLBase.__solve(
     haskey(kwargs, :callback) && (callback = CallbackSet(callback, kwargs[:callback]))
     haskey(odesolve_kwargs, :callback) &&
         (callback = CallbackSet(callback, odesolve_kwargs[:callback]))
-    # Strip `verbose = nothing` only: `DiffEqBase.solve` treats `nothing` as
-    # an explicit override of its `DEFAULT_VERBOSE` default, which then breaks
-    # the `@verbose` / `DEVerbosity` dispatch downstream. A real `Bool` or
-    # `DEVerbosity` from the caller is forwarded untouched.
-    if haskey(kwargs, :verbose) && kwargs[:verbose] === nothing
-        kwargs = pairs(Base.structdiff((; kwargs...), (; verbose = nothing)))
-    end
+    kwargs = pairs(Base.structdiff((; kwargs...), (; verbose = nothing)))
     # Construct and solve the ODEProblem
     odeprob = ODEProblem{isinplace(prob), true}(f, prob.u0, tspan, prob.p)
     odesol = solve(
