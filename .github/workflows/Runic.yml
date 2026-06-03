@@ -1,0 +1,18 @@
+name: format-check
+
+on:
+  push:
+    branches:
+      - 'master'
+      - 'main'
+      - 'release-'
+    tags: '*'
+  pull_request:
+
+jobs:
+  runic:
+    uses: "SciML/.github/.github/workflows/runic.yml@v1"
+    with:
+      julia-version: "1"
+      runic-version: "1"
+    secrets: "inherit"
