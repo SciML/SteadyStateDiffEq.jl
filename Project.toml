@@ -13,12 +13,13 @@ SciMLBase = "0bca4576-84f4-4d90-8ffe-ffa030f20462"
 
 [compat]
 ConcreteStructs = "0.2"
-DiffEqBase = "6.140, 7"
-DiffEqCallbacks = "3, 4"
+DiffEqBase = "7"
+DiffEqCallbacks = "4.5.0"
+NonlinearSolve = "4.12"
 NonlinearSolveBase = "2.2"
 OrdinaryDiffEq = "6, 7"
 Pkg = "1.10"
-Reexport = "1.0"
+Reexport = "1.2.2"
 SciMLBase = "2, 3"
 julia = "1.10"
 
