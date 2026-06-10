@@ -3,8 +3,8 @@ using SafeTestsets, Test
 
 const GROUP = get(ENV, "GROUP", "All")
 
-function activate_nopre_env()
-    Pkg.activate("nopre")
+function activate_qa_env()
+    Pkg.activate("qa")
     Pkg.develop(PackageSpec(path = dirname(@__DIR__)))
     return Pkg.instantiate()
 end
@@ -19,10 +19,10 @@ end
         end
     end
 
-    if GROUP == "nopre" && isempty(VERSION.prerelease)
-        activate_nopre_env()
-        @time @safetestset "JET Static Analysis" begin
-            include("nopre/jet_tests.jl")
+    if GROUP == "QA"
+        activate_qa_env()
+        @time @safetestset "Quality Assurance" begin
+            include("qa/qa.jl")
         end
     end
 end
