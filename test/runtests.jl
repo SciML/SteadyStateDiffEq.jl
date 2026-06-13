@@ -1,28 +1,27 @@
-using Pkg
 using SafeTestsets, Test
+using SciMLTesting
 
-const GROUP = get(ENV, "GROUP", "All")
-
-function activate_qa_env()
-    Pkg.activate("qa")
-    Pkg.develop(PackageSpec(path = dirname(@__DIR__)))
-    return Pkg.instantiate()
-end
-
-@time begin
-    if GROUP == "All" || GROUP == "Core"
-        @time @safetestset "Core Tests" begin
-            include("core.jl")
+run_tests(;
+    core = () -> begin
+        @time begin
+            @time @safetestset "Core Tests" begin
+                include("core.jl")
+            end
+            @time @safetestset "Autodiff Tests" begin
+                include("autodiff.jl")
+            end
         end
-        @time @safetestset "Autodiff Tests" begin
-            include("autodiff.jl")
-        end
-    end
-
-    if GROUP == "QA"
-        activate_qa_env()
-        @time @safetestset "Quality Assurance" begin
-            include("qa/qa.jl")
-        end
-    end
-end
+    end,
+    groups = Dict(
+        # Declared `env` => activates test/qa and runs only for GROUP="QA", never
+        # under "All" (matching the original `if GROUP == "QA"` branch).
+        "QA" => (;
+            env = joinpath(@__DIR__, "qa"),
+            body = () -> begin
+                @time @safetestset "Quality Assurance" begin
+                    include("qa/qa.jl")
+                end
+            end,
+        ),
+    ),
+)
