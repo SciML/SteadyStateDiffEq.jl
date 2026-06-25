@@ -4,16 +4,14 @@ using Reexport: @reexport
 @reexport using SciMLBase
 
 using ConcreteStructs: @concrete
-using NonlinearSolveBase
 import DiffEqBase
-using NonlinearSolveBase: AbstractNonlinearTerminationMode,
+using NonlinearSolveBase: NonlinearSolveBase, AbstractNonlinearTerminationMode,
     AbstractSafeNonlinearTerminationMode,
-    AbstractSafeBestNonlinearTerminationMode,
-    NormTerminationMode
+    AbstractSafeBestNonlinearTerminationMode
 using DiffEqCallbacks: TerminateSteadyState
 using LinearAlgebra: norm
 using SciMLBase: SciMLBase, CallbackSet, NonlinearProblem, ODEProblem,
-    ReturnCode, SteadyStateProblem, get_du, init, isinplace
+    ReturnCode, SteadyStateProblem, get_du, init, isinplace, solve
 
 const infnorm = Base.Fix2(norm, Inf)
 
