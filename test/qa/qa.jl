@@ -11,18 +11,16 @@ run_qa(
     ei_kwargs = (
         # `value` is owned by SciMLBase but re-exported and accessed via DiffEqBase.
         all_qualified_accesses_via_owners = (; ignore = (:value,)),
-        # Non-public names of upstream SciML packages (SciMLBase, NonlinearSolveBase,
-        # DiffEqBase) and Base accessed by qualification; they go public as those
-        # libraries declare them.
+        # Names still not declared public by their owning package (or Base) as of
+        # SciMLBase 3.24, NonlinearSolveBase 2.31, DiffEqBase 7.5; drop each as it
+        # is made public upstream.
         all_qualified_accesses_are_public = (;
             ignore = (
                 :AbstractSteadyStateAlgorithm, :AbstractSteadyStateProblem,  # SciMLBase
-                :NonlinearAliasSpecifier, :__solve, :build_solution, :isadaptive,  # SciMLBase
-                :Default, :Failure, :Success, :Terminated,  # SciMLBase.ReturnCode
-                :Fix2, :structdiff,  # Base
+                :NonlinearAliasSpecifier, :__solve, :isadaptive,  # SciMLBase
                 :get_abstol, :get_reltol,  # NonlinearSolveBase
-                :prepare_alg,  # DiffEqBase
-                :value,  # SciMLBase (accessed via DiffEqBase)
+                :prepare_alg, :value,  # DiffEqBase
+                :structdiff,  # Base
             ),
         ),
         # Non-public NonlinearSolveBase termination-mode abstract types imported explicitly.
