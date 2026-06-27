@@ -12,12 +12,11 @@ run_qa(
         # `value` is owned by SciMLBase but re-exported and accessed via DiffEqBase.
         all_qualified_accesses_via_owners = (; ignore = (:value,)),
         # Names still not declared public by their owning package (or Base) as of
-        # SciMLBase 3.24, NonlinearSolveBase 2.31, DiffEqBase 7.5; drop each as it
+        # SciMLBase 3.27, NonlinearSolveBase 2.31, DiffEqBase 7.6; drop each as it
         # is made public upstream.
         all_qualified_accesses_are_public = (;
             ignore = (
-                :AbstractSteadyStateAlgorithm, :AbstractSteadyStateProblem,  # SciMLBase
-                :NonlinearAliasSpecifier, :__solve, :isadaptive,  # SciMLBase
+                :AbstractSteadyStateProblem, :__solve,  # SciMLBase
                 :get_abstol, :get_reltol,  # NonlinearSolveBase
                 :prepare_alg, :value,  # DiffEqBase
                 :structdiff,  # Base
