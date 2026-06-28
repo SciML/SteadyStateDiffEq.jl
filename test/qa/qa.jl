@@ -17,17 +17,14 @@ run_qa(
         all_qualified_accesses_are_public = (;
             ignore = (
                 :AbstractSteadyStateProblem, :__solve,  # SciMLBase
-                :get_abstol, :get_reltol,  # NonlinearSolveBase
                 :prepare_alg, :value,  # DiffEqBase
                 :structdiff,  # Base
             ),
         ),
-        # Non-public NonlinearSolveBase termination-mode abstract types imported explicitly.
+        # Non-public NonlinearSolveBase termination-mode abstract type imported explicitly.
         all_explicit_imports_are_public = (;
             ignore = (
-                :AbstractNonlinearTerminationMode,
-                :AbstractSafeBestNonlinearTerminationMode,
-                :AbstractSafeNonlinearTerminationMode,  # NonlinearSolveBase
+                :AbstractSafeBestNonlinearTerminationMode,  # NonlinearSolveBase
             ),
         ),
     ),
