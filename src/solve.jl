@@ -14,7 +14,7 @@ __get_tspan(u0, alg::DynamicSS) = __get_tspan(u0, alg.tspan)
 __get_tspan(u0, tspan::Tuple) = tspan
 function __get_tspan(u0, tspan::Number)
     return convert.(
-        DiffEqBase.value(real(eltype(u0))), (DiffEqBase.value(zero(tspan)), tspan)
+        SciMLBase.value(real(eltype(u0))), (SciMLBase.value(zero(tspan)), tspan)
     )
 end
 

@@ -9,15 +9,12 @@ run_qa(
     # https://github.com/SciML/SteadyStateDiffEq.jl/issues/134
     aqua_broken = (:deps_compat,),
     ei_kwargs = (
-        # `value` is owned by SciMLBase but re-exported and accessed via DiffEqBase.
-        all_qualified_accesses_via_owners = (; ignore = (:value,)),
-        # Names still not declared public by their owning package (or Base) as of
-        # SciMLBase 3.27, NonlinearSolveBase 2.31, DiffEqBase 7.6; drop each as it
-        # is made public upstream.
+        # Names still not declared public by their owning package (or Base); drop each
+        # as it is made public upstream.
         all_qualified_accesses_are_public = (;
             ignore = (
-                :AbstractSteadyStateProblem, :__solve,  # SciMLBase
-                :prepare_alg, :value,  # DiffEqBase
+                :AbstractSteadyStateProblem, :__solve, :value,  # SciMLBase
+                :prepare_alg,  # DiffEqBase
                 :structdiff,  # Base
             ),
         ),
