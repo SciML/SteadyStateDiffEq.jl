@@ -2,3 +2,5 @@
 *.jl.*.cov
 *.jl.mem
 Manifest.toml
+.julia_depot/
+docs/build/

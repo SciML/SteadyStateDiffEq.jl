@@ -1,6 +1,8 @@
 using SciMLTesting, SteadyStateDiffEq, Test
 using JET
 
+include("public_api_docs.jl")
+
 run_qa(
     SteadyStateDiffEq;
     explicit_imports = true,
