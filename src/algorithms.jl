@@ -3,8 +3,21 @@ abstract type SteadyStateDiffEqAlgorithm <: SciMLBase.AbstractSteadyStateAlgorit
 """
     SSRootfind(alg = nothing)
 
-Use a Nonlinear Solver to find the steady state. Requires that a nonlinear solver is
-given as the first argument.
+Solve a steady-state problem by converting it to a `NonlinearProblem` and calling a
+nonlinear solver.
+
+## Arguments
+
+  - `alg`: the nonlinear solver algorithm passed to `solve`. When `alg === nothing`,
+    the default nonlinear solver is selected by the downstream solver package.
+
+## Example
+
+```julia
+using SteadyStateDiffEq, NonlinearSolve
+
+sol = solve(prob, SSRootfind(NewtonRaphson()))
+```
 
 !!! note
 
@@ -20,13 +33,24 @@ SSRootfind() = SSRootfind(nothing)
 """
     DynamicSS(alg = nothing; tspan = Inf)
 
-Requires that an ODE algorithm is given as the first argument.  The absolute and
-relative tolerances specify the termination conditions on the derivative's closeness to
-zero.  This internally uses the `TerminateSteadyState` callback from the Callback Library.
-The simulated time for which given ODE is solved can be limited by `tspan`.  If `tspan` is
-a number, it is equivalent to passing `(zero(tspan), tspan)`.
+Solve a steady-state problem by evolving the corresponding ODE until the derivative is
+close to zero.
 
-Example usage:
+`DynamicSS` internally adds a `TerminateSteadyState` callback. The `abstol` and
+`reltol` keywords passed to `solve` control the steady-state termination condition. Use
+`odesolve_kwargs` to pass separate keyword arguments to the ODE solve.
+
+## Arguments
+
+  - `alg`: the ODE solver algorithm passed to `solve`. When `alg === nothing`, the
+    default ODE solver is selected by the downstream solver package.
+
+## Keywords
+
+  - `tspan`: the time span used for the ODE solve. If `tspan` is a number, it is
+    equivalent to `(zero(tspan), tspan)`.
+
+## Example
 
 ```julia
 using SteadyStateDiffEq, OrdinaryDiffEq
