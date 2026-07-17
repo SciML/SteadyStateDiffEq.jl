@@ -25,9 +25,12 @@ run_qa(
         # as it is made public upstream.
         all_qualified_accesses_are_public = (;
             ignore = (
-                :AbstractSteadyStateProblem, :__solve, :value,  # SciMLBase
+                :AbstractSteadyStateProblem, :__solve, :value, :unwrapped_f,  # SciMLBase
                 :prepare_alg,  # DiffEqBase
+                :get_raw_f,  # NonlinearSolveBase
                 :structdiff,  # Base
+                # Documented ForwardDiff API that ForwardDiff does not declare public
+                :Dual, :Tag, :jacobian, :partials,  # ForwardDiff
             ),
         ),
         # Non-public NonlinearSolveBase termination-mode abstract type imported explicitly.

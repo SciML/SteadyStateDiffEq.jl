@@ -10,7 +10,7 @@ function SciMLBase.__solve(
     )
 end
 
-__get_tspan(u0, alg::DynamicSS) = __get_tspan(u0, alg.tspan)
+__get_tspan(u0, alg::Union{DynamicSS, SICNM}) = __get_tspan(u0, alg.tspan)
 __get_tspan(u0, tspan::Tuple) = tspan
 function __get_tspan(u0, tspan::Number)
     return convert.(
@@ -82,6 +82,184 @@ function SciMLBase.__solve(
         prob, DynamicSS(odesol.alg, alg.tspan), u, resid;
         retcode, odesol.stats, original = odesol
     )
+end
+
+# SICNM: Semi-Implicit Continuous Newton Method
+# Solves 0 = g(y) by integrating the DAE  ẏ = z, 0 = J(y)z + g(y)  to steady state,
+# where J is the Jacobian of g. See the SICNM docstring for details and references.
+
+struct SICNMJacVecTag end
+
+# Evaluate the residual g and the Jacobian-vector product J(y)z simultaneously from a
+# single dual-number evaluation of g at y + ε z.
+function __sicnm_dual_seed(y, z)
+    T = eltype(y)
+    TagType = typeof(ForwardDiff.Tag(SICNMJacVecTag(), T))
+    td = ForwardDiff.Dual{TagType}(zero(T), one(T))
+    return @. y + td * z
+end
+
+function __sicnm_g_and_jvp(g::G, y, z) where {G}
+    resd = g(__sicnm_dual_seed(y, z))
+    return map(ForwardDiff.value, resd), map(d -> first(ForwardDiff.partials(d)), resd)
+end
+
+function __sicnm_g_and_jvp!(gval, jvp, g!::G, y, z) where {G}
+    yd = __sicnm_dual_seed(y, z)
+    resd = similar(yd)
+    g!(resd, yd)
+    @. gval = ForwardDiff.value(resd)
+    @. jvp = first(ForwardDiff.partials(resd))
+    return nothing
+end
+
+function SciMLBase.__solve(
+        prob::SciMLBase.AbstractSteadyStateProblem, alg::SICNM,
+        args...; abstol = 1.0e-8, reltol = 1.0e-6, odesolve_kwargs = (;),
+        save_idxs = nothing,
+        termination_condition = NonlinearSolveBase.AbsNormTerminationMode(infnorm),
+        alias = SciMLBase.NonlinearAliasSpecifier(), kwargs...
+    )
+    prob.u0 isa AbstractVector ||
+        throw(ArgumentError("SICNM currently only supports `AbstractVector` initial conditions"))
+    tspan = __get_tspan(prob.u0, alg)
+    iip = isinplace(prob)
+    p = prob.p
+    t0 = first(tspan)
+
+    g = if prob isa SteadyStateProblem
+        iip ? ((res, y) -> prob.f(res, y, p, t0)) : (y -> prob.f(y, p, t0))
+    elseif prob isa NonlinearProblem
+        # AutoSpecialize wraps `prob.f` in FunctionWrappers compiled only for the
+        # standard solver dual types, which cannot accept the SICNM JVP duals, so
+        # unwrap down to the raw user function
+        fnl = NonlinearSolveBase.get_raw_f(SciMLBase.unwrapped_f(prob.f.f))
+        iip ? ((res, y) -> fnl(res, y, p)) : (y -> fnl(y, p))
+    end
+
+    # consistent initialization: z₀ = -J(y₀) \ g(y₀)
+    y0 = float.(prob.u0)
+    n = length(y0)
+    if iip
+        g0 = similar(y0)
+        g(g0, y0)
+        J0 = ForwardDiff.jacobian((res, y) -> g(res, y), similar(g0), y0)
+    else
+        g0 = g(y0)
+        J0 = ForwardDiff.jacobian(g, y0)
+    end
+    z0 = -(J0 \ g0)
+    u0 = vcat(y0, z0)
+    T = eltype(u0)
+
+    # extended DAE:  M [ẏ; ż] = [z; J(y)z + g(y)],  M = diag(I, 0)
+    mass_matrix = Diagonal(vcat(fill(one(T), n), fill(zero(T), n)))
+    fext = if iip
+        (du, u, p_, t) -> begin
+            y = view(u, 1:n)
+            z = view(u, (n + 1):(2n))
+            copyto!(view(du, 1:n), z)
+            gval = similar(u, n)
+            jvp = view(du, (n + 1):(2n))
+            __sicnm_g_and_jvp!(gval, jvp, g, y, z)
+            jvp .+= gval
+            return nothing
+        end
+    else
+        (u, p_, t) -> begin
+            y = view(u, 1:n)
+            z = view(u, (n + 1):(2n))
+            gval, jvp = __sicnm_g_and_jvp(g, y, z)
+            return vcat(z, jvp .+ gval)
+        end
+    end
+
+    # termination is based on the nonlinear residual g(y), not on du of the DAE
+    tc_cache = init(prob, termination_condition, g0, y0; abstol, reltol)
+    abstol = NonlinearSolveBase.get_abstol(tc_cache)
+    reltol = NonlinearSolveBase.get_reltol(tc_cache)
+
+    gbuf = iip ? similar(g0) : nothing
+    function terminate_function(u, t, integrator)
+        y = view(u, 1:n)
+        gval = if iip
+            g(gbuf, y)
+            gbuf
+        else
+            g(y)
+        end
+        return tc_cache(gval, y, view(integrator.uprev, 1:n), t)
+    end
+
+    callback = TerminateSteadyState(
+        abstol, reltol, terminate_function;
+        wrap_test = Val(false)
+    )
+
+    haskey(kwargs, :callback) && (callback = CallbackSet(callback, kwargs[:callback]))
+    haskey(odesolve_kwargs, :callback) &&
+        (callback = CallbackSet(callback, odesolve_kwargs[:callback]))
+    kwargs = pairs(Base.structdiff((; kwargs...), (; verbose = nothing)))
+
+    odefun = SciMLBase.ODEFunction{iip, SciMLBase.FullSpecialize}(fext; mass_matrix)
+    odeprob = ODEProblem{iip}(odefun, u0, tspan, p)
+    odesol = solve(
+        odeprob, alg.alg, args...; abstol, reltol, kwargs...,
+        odesolve_kwargs..., callback, save_end = true
+    )
+
+    u, retcode = __sicnm_result(termination_condition, tc_cache, odesol, n)
+    resid = if iip
+        g(gbuf, u)
+        gbuf
+    else
+        g(u)
+    end
+
+    if save_idxs !== nothing
+        u = u[save_idxs]
+        resid = resid[save_idxs]
+    end
+
+    return SciMLBase.build_solution(
+        prob, SICNM(odesol.alg, alg.tspan), u, resid;
+        retcode, odesol.stats, original = odesol
+    )
+end
+
+function __sicnm_result(::AbstractNonlinearTerminationMode, tc_cache, odesol, n)
+    u = last(odesol.u)[1:n]
+    retcode = ifelse(
+        odesol.retcode == ReturnCode.Terminated, ReturnCode.Success,
+        ReturnCode.Failure
+    )
+    return u, retcode
+end
+
+function __sicnm_result(::AbstractSafeNonlinearTerminationMode, tc_cache, odesol, n)
+    u = last(odesol.u)[1:n]
+    retcode_tc = tc_cache.retcode
+    retcode = if odesol.retcode == ReturnCode.Terminated
+        ifelse(retcode_tc != ReturnCode.Default, retcode_tc, ReturnCode.Success)
+    elseif odesol.retcode == ReturnCode.Success
+        ReturnCode.Failure
+    else
+        odesol.retcode
+    end
+    return u, retcode
+end
+
+function __sicnm_result(::AbstractSafeBestNonlinearTerminationMode, tc_cache, odesol, n)
+    u = copy(tc_cache.u)
+    retcode_tc = tc_cache.retcode
+    retcode = if odesol.retcode == ReturnCode.Terminated
+        ifelse(retcode_tc != ReturnCode.Default, retcode_tc, ReturnCode.Success)
+    elseif odesol.retcode == ReturnCode.Success
+        ReturnCode.Failure
+    else
+        odesol.retcode
+    end
+    return u, retcode
 end
 
 function __get_result_from_sol(::AbstractNonlinearTerminationMode, tc_cache, odesol)

@@ -28,9 +28,21 @@ using SteadyStateDiffEq, OrdinaryDiffEq
 sol = solve(prob, DynamicSS(Tsit5()))
 ```
 
+Use `SICNM` (the semi-implicit continuous Newton method) to solve the steady-state
+residual equation by integrating the continuous Newton flow, written as a
+differential-algebraic equation, until the residual is close to zero. This is much more
+robust than Newton's method on ill-conditioned problems such as power flow equations:
+
+```julia
+using SteadyStateDiffEq, OrdinaryDiffEqRosenbrock
+
+sol = solve(prob, SICNM(Rodas3d()))
+```
+
 ## API
 
 ```@docs
 SSRootfind
 DynamicSS
+SICNM
 ```
