@@ -11,6 +11,11 @@ nonlinear solver.
   - `alg`: the nonlinear solver algorithm passed to `solve`. When `alg === nothing`,
     the default nonlinear solver is selected by the downstream solver package.
 
+## Fields
+
+  - `alg`: nonlinear solver algorithm, or `nothing` to request downstream default
+    selection.
+
 ## Example
 
 ```julia
@@ -45,10 +50,15 @@ close to zero.
   - `alg`: the ODE solver algorithm passed to `solve`. When `alg === nothing`, the
     default ODE solver is selected by the downstream solver package.
 
-## Keywords
+## Keyword Arguments
 
   - `tspan`: the time span used for the ODE solve. If `tspan` is a number, it is
     equivalent to `(zero(tspan), tspan)`.
+
+## Fields
+
+  - `alg`: ODE solver algorithm, or `nothing` to request downstream default selection.
+  - `tspan`: time span passed to the internal ODE solve.
 
 ## Example
 
