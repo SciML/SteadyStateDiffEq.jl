@@ -114,13 +114,24 @@ equations where Newton's method diverges.
 
 `SICNM` internally adds a callback that terminates the integration when the nonlinear
 residual `g(y)` satisfies the termination condition. The `abstol` and `reltol` keywords
-passed to `solve` control this termination condition; use `odesolve_kwargs` to pass
-separate keyword arguments to the ODE solve.
+passed to `solve` control this termination condition — i.e. how small `g(y)` must be for
+the returned point to count as a solution.
+
+The accuracy of the transient DAE integration is a *separate* knob. Because only the
+steady state matters (the trajectory that reaches it does not), the ODE solve defaults to
+a loose tolerance so the stiffly accurate solver can take large damping steps toward
+equilibrium, exactly as the reference SICNM implementation does. Tying the integration
+tolerance to the (tight) residual tolerance would force an accurate transient and cost
+roughly an order of magnitude more work for the same answer. Pass
+`odesolve_kwargs = (abstol = ..., reltol = ...)` to override the integration tolerance,
+along with any other keyword arguments for the ODE solve.
 
 The Jacobian-vector products `J(y) z` required by the DAE are computed via ForwardDiff
 dual numbers together with the residual evaluation, so no full Jacobian of `g` is ever
-materialized inside the right-hand side (a single dense Jacobian is used for the
-initialization of `z(0)`).
+materialized inside the right-hand side. A single dense Jacobian is formed only for the
+consistent initialization `z(0) = -J(y₀)⁻¹ g(y₀)`, whose linear solve is handled by
+[LinearSolve.jl](https://docs.sciml.ai/LinearSolve/stable/) and is configurable through
+the `linsolve` keyword.
 
 ## Arguments
 
@@ -128,7 +139,8 @@ initialization of `z(0)`).
     matrices and should be stiffly accurate and L-stable. [`Rodas3d`](https://docs.sciml.ai/DiffEqDocs/stable/solvers/dae_solve/)
     from OrdinaryDiffEqRosenbrock.jl was constructed specifically for this method and is
     the recommended choice; other Rosenbrock methods such as `Rodas4` or `Rodas5P` also
-    work well.
+    work well. The linear solver used for the implicit stages of the DAE integration is
+    configured on this ODE algorithm itself (e.g. `Rodas3d(; linsolve = KrylovJL_GMRES())`).
 
 ## Keywords
 
@@ -136,6 +148,10 @@ initialization of `z(0)`).
     equivalent to `(zero(tspan), tspan)`. Since the residual decays like ``e^{-t}``
     along the exact flow, the default `Inf` combined with the termination callback is
     normally appropriate.
+  - `linsolve`: the [LinearSolve.jl](https://docs.sciml.ai/LinearSolve/stable/) algorithm
+    used for the consistent initialization solve `z(0) = -J(y₀)⁻¹ g(y₀)`. Defaults to
+    `nothing`, which lets LinearSolve select an appropriate factorization for the
+    Jacobian. Pass e.g. `linsolve = KrylovJL_GMRES()` for large or sparse systems.
 
 ## Example
 
@@ -153,12 +169,13 @@ Flow Analysis. arXiv:2312.02809. https://arxiv.org/abs/2312.02809
 @concrete struct SICNM <: SteadyStateDiffEqAlgorithm
     alg
     tspan
+    linsolve
 end
 
-SICNM(alg = nothing; tspan = Inf) = SICNM(alg, tspan)
+SICNM(alg = nothing; tspan = Inf, linsolve = nothing) = SICNM(alg, tspan, linsolve)
 
 function DiffEqBase.prepare_alg(alg::SICNM, u0, p, f)
-    return SICNM(DiffEqBase.prepare_alg(alg.alg, u0, p, f), alg.tspan)
+    return SICNM(DiffEqBase.prepare_alg(alg.alg, u0, p, f), alg.tspan, alg.linsolve)
 end
 
 ## SciMLBase Trait Definitions

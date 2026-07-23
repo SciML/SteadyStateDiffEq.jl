@@ -11,7 +11,8 @@ using NonlinearSolveBase: NonlinearSolveBase, AbstractNonlinearTerminationMode,
 using DiffEqCallbacks: TerminateSteadyState
 using ForwardDiff: ForwardDiff
 using LinearAlgebra: Diagonal, norm
-using SciMLBase: SciMLBase, CallbackSet, NonlinearProblem, ODEProblem,
+using LinearSolve: LinearSolve
+using SciMLBase: SciMLBase, CallbackSet, LinearProblem, NonlinearProblem, ODEProblem,
     ReturnCode, SteadyStateProblem, get_du, init, isinplace, solve
 
 const infnorm = Base.Fix2(norm, Inf)

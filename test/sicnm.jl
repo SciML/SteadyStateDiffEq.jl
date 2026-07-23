@@ -1,5 +1,6 @@
 using SteadyStateDiffEq, OrdinaryDiffEq, NonlinearSolve, Test
 using LinearAlgebra: norm
+using LinearSolve: LUFactorization, QRFactorization, KrylovJL_GMRES
 using NonlinearSolve.NonlinearSolveBase: NormTerminationMode, AbsNormTerminationMode,
     RelNormSafeTerminationMode, AbsNormSafeBestTerminationMode
 
@@ -40,6 +41,26 @@ end
     sol = solve(prob, SICNM(Rodas5P()))
     @test SciMLBase.successful_retcode(sol.retcode)
     @test norm(sol.resid, Inf) < 1.0e-8
+end
+
+@testset "SICNM linsolve for the z(0) initialization" begin
+    g = (u, p) -> [1.0e4 * u[1] * u[2] - 1, exp(-u[1]) + exp(-u[2]) - 1.0001]
+    prob = NonlinearProblem(g, [0.0, 1.0])
+
+    sol_default = solve(prob, SICNM(Rodas5P()))
+    @test SciMLBase.successful_retcode(sol_default.retcode)
+
+    # An explicit direct factorization must match the default backslash exactly
+    sol_lu = solve(prob, SICNM(Rodas5P(); linsolve = LUFactorization()))
+    @test SciMLBase.successful_retcode(sol_lu.retcode)
+    @test sol_lu.u ≈ sol_default.u
+
+    # Other LinearSolve algorithms should also drive the residual to zero
+    for ls in (QRFactorization(), KrylovJL_GMRES())
+        sol = solve(prob, SICNM(Rodas5P(); linsolve = ls))
+        @test SciMLBase.successful_retcode(sol.retcode)
+        @test norm(g(sol.u, nothing), Inf) < 1.0e-8
+    end
 end
 
 @testset "SICNM robustness where Newton diverges" begin

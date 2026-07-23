@@ -137,7 +137,7 @@ function SciMLBase.__solve(
         iip ? ((res, y) -> fnl(res, y, p)) : (y -> fnl(y, p))
     end
 
-    # consistent initialization: z₀ = -J(y₀) \ g(y₀)
+    # consistent initialization: z₀ = -J(y₀)⁻¹ g(y₀), solved with LinearSolve.jl
     y0 = float.(prob.u0)
     n = length(y0)
     if iip
@@ -148,7 +148,7 @@ function SciMLBase.__solve(
         g0 = g(y0)
         J0 = ForwardDiff.jacobian(g, y0)
     end
-    z0 = -(J0 \ g0)
+    z0 = solve(LinearProblem(J0, -g0), alg.linsolve).u
     u0 = vcat(y0, z0)
     T = eltype(u0)
 
@@ -201,11 +201,24 @@ function SciMLBase.__solve(
         (callback = CallbackSet(callback, odesolve_kwargs[:callback]))
     kwargs = pairs(Base.structdiff((; kwargs...), (; verbose = nothing)))
 
+    # The transient trajectory of the continuous-Newton flow is irrelevant — only
+    # the steady state (where g(y) = 0) matters, and it is pinned down by the
+    # residual-based termination callback, not by the accuracy of the ODE solve.
+    # So the ODE integration uses a loose default tolerance (as in the reference
+    # SICNM implementation, which steps at Atol = Rtol = 0.1), which lets the
+    # stiffly accurate solver take large damping steps toward equilibrium. Tying
+    # the ODE tolerance to the tight residual tolerance instead would force an
+    # accurate transient and defeat the purpose (an order of magnitude more work).
+    # `odesolve_kwargs` still overrides these when a user wants finer control.
+    Tt = real(eltype(u0))
+    ode_abstol = convert(Tt, 1 // 10)
+    ode_reltol = convert(Tt, 1 // 10)
+
     odefun = SciMLBase.ODEFunction{iip, SciMLBase.FullSpecialize}(fext; mass_matrix)
     odeprob = ODEProblem{iip}(odefun, u0, tspan, p)
     odesol = solve(
-        odeprob, alg.alg, args...; abstol, reltol, kwargs...,
-        odesolve_kwargs..., callback, save_end = true
+        odeprob, alg.alg, args...; abstol = ode_abstol, reltol = ode_reltol,
+        kwargs..., odesolve_kwargs..., callback, save_end = true
     )
 
     u, retcode = __sicnm_result(termination_condition, tc_cache, odesol, n)
@@ -222,7 +235,7 @@ function SciMLBase.__solve(
     end
 
     return SciMLBase.build_solution(
-        prob, SICNM(odesol.alg, alg.tspan), u, resid;
+        prob, SICNM(odesol.alg, alg.tspan, alg.linsolve), u, resid;
         retcode, odesol.stats, original = odesol
     )
 end
