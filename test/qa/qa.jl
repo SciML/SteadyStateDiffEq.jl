@@ -12,6 +12,11 @@ run_qa(
     SteadyStateDiffEq;
     explicit_imports = true,
     jet_kwargs = (; target_defined_modules = true),
+    # `@reexport using SciMLBase` intentionally re-exports SciMLBase's public API
+    # (SteadyStateProblem, solve, CallbackSet, ...). Approve exactly those names for
+    # SciMLTesting's `check_reexports` test (added in SciMLTesting 2.x); they are the
+    # same dependency-owned names already ignored for the api-docs checks below.
+    reexports_allow = DEPENDENCY_REEXPORTS,
     api_docs_kwargs = (;
         rendered = true,
         ignore = DEPENDENCY_REEXPORTS,
@@ -25,9 +30,12 @@ run_qa(
         # as it is made public upstream.
         all_qualified_accesses_are_public = (;
             ignore = (
-                :AbstractSteadyStateProblem, :__solve, :value,  # SciMLBase
+                :AbstractSteadyStateProblem, :__solve, :value, :unwrapped_f,  # SciMLBase
                 :prepare_alg,  # DiffEqBase
+                :get_raw_f,  # NonlinearSolveBase
                 :structdiff,  # Base
+                # Documented ForwardDiff API that ForwardDiff does not declare public
+                :Dual, :Tag, :jacobian, :partials,  # ForwardDiff
             ),
         ),
         # Non-public NonlinearSolveBase termination-mode abstract type imported explicitly.
