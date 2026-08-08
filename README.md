@@ -12,14 +12,16 @@ functionality should check out [DifferentialEquations.jl](https://github.com/Sci
 
 ## Usage
 
-SteadyStateDiffEq.jl provides two main algorithms for finding steady states:
+SteadyStateDiffEq.jl provides three algorithms for finding steady states:
 
 ### SSRootfind - Nonlinear Solver Approach
 
 Use a nonlinear solver to directly find the steady state:
 
 ```julia
-using SteadyStateDiffEq, NonlinearSolve
+using SciMLBase: SteadyStateProblem, solve
+using SteadyStateDiffEq
+using NonlinearSolve
 
 function f!(du, u, p, t)
     du[1] = 2 - 2u[1]
@@ -36,9 +38,25 @@ sol = solve(prob, SSRootfind())
 Evolve the system forward in time until derivatives approach zero:
 
 ```julia
-using SteadyStateDiffEq, OrdinaryDiffEq
+using SciMLBase: SteadyStateProblem, solve
+using SteadyStateDiffEq
+using Sundials: CVODE_BDF
 
-sol = solve(prob, DynamicSS(Tsit5()))
+prob = SteadyStateProblem((u, p, t) -> 1 .- u, [0.0])
+sol = solve(prob, DynamicSS(CVODE_BDF()); dt = 1.0)
+```
+
+### SICNM - Semi-Implicit Continuous Newton Method
+
+Integrate the continuous Newton flow with a mass-matrix solver:
+
+```julia
+using SciMLBase: SteadyStateProblem, solve
+using SteadyStateDiffEq
+using OrdinaryDiffEqRosenbrock: Rodas3d
+
+prob = SteadyStateProblem((u, p, t) -> 1 .- u, [0.0])
+sol = solve(prob, SICNM(Rodas3d()))
 ```
 
 For more details, see the [SciML documentation](https://docs.sciml.ai/DiffEqDocs/stable/).

@@ -1,48 +1,19 @@
 using SciMLTesting, SteadyStateDiffEq, Test
 using JET
 
-dependency_reexports(pkg) = Tuple(
-    name for name in public_api_names(pkg)
-        if isdefined(pkg, name) && parentmodule(getfield(pkg, name)) !== pkg
+const QUALIFIED_PUBLIC_IGNORE = (
+    # Required to unwrap NonlinearSolve's AutoSpecialize callable; documented by
+    # NonlinearSolveBase but not declared public by its owner.
+    :get_raw_f,
+    # Documented ForwardDiff API that ForwardDiff does not declare public.
+    :Dual, :Tag, :jacobian, :partials, :value,
 )
-
-const DEPENDENCY_REEXPORTS = dependency_reexports(SteadyStateDiffEq)
 
 run_qa(
     SteadyStateDiffEq;
-    explicit_imports = true,
-    jet_kwargs = (; target_defined_modules = true),
-    # `@reexport using SciMLBase` intentionally re-exports SciMLBase's public API
-    # (SteadyStateProblem, solve, CallbackSet, ...). Approve exactly those names for
-    # SciMLTesting's `check_reexports` test (added in SciMLTesting 2.x); they are the
-    # same dependency-owned names already ignored for the api-docs checks below.
-    reexports_allow = DEPENDENCY_REEXPORTS,
-    api_docs_kwargs = (;
-        rendered = true,
-        ignore = DEPENDENCY_REEXPORTS,
-        rendered_ignore = DEPENDENCY_REEXPORTS,
-    ),
-    # Aqua deps_compat: missing [compat] for stdlib LinearAlgebra
-    # https://github.com/SciML/SteadyStateDiffEq.jl/issues/134
-    aqua_broken = (:deps_compat,),
-    ei_kwargs = (
-        # Names still not declared public by their owning package (or Base); drop each
-        # as it is made public upstream.
+    ei_kwargs = (;
         all_qualified_accesses_are_public = (;
-            ignore = (
-                :AbstractSteadyStateProblem, :__solve, :value, :unwrapped_f,  # SciMLBase
-                :prepare_alg,  # DiffEqBase
-                :get_raw_f,  # NonlinearSolveBase
-                :structdiff,  # Base
-                # Documented ForwardDiff API that ForwardDiff does not declare public
-                :Dual, :Tag, :jacobian, :partials,  # ForwardDiff
-            ),
-        ),
-        # Non-public NonlinearSolveBase termination-mode abstract type imported explicitly.
-        all_explicit_imports_are_public = (;
-            ignore = (
-                :AbstractSafeBestNonlinearTerminationMode,  # NonlinearSolveBase
-            ),
+            ignore = QUALIFIED_PUBLIC_IGNORE,
         ),
     ),
 )

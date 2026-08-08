@@ -18,6 +18,10 @@ function __get_tspan(u0, tspan::Number)
     )
 end
 
+function __without_verbose(kwargs)
+    return (; (name => value for (name, value) in pairs(kwargs) if name !== :verbose)...)
+end
+
 function SciMLBase.__solve(
         prob::SciMLBase.AbstractSteadyStateProblem, alg::DynamicSS,
         args...; abstol = 1.0e-8, reltol = 1.0e-6, odesolve_kwargs = (;),
@@ -59,7 +63,7 @@ function SciMLBase.__solve(
     haskey(kwargs, :callback) && (callback = CallbackSet(callback, kwargs[:callback]))
     haskey(odesolve_kwargs, :callback) &&
         (callback = CallbackSet(callback, odesolve_kwargs[:callback]))
-    kwargs = pairs(Base.structdiff((; kwargs...), (; verbose = nothing)))
+    kwargs = pairs(__without_verbose(kwargs))
     # Construct and solve the ODEProblem
     odeprob = ODEProblem{isinplace(prob), true}(f, prob.u0, tspan, prob.p)
     odesol = solve(
@@ -71,7 +75,7 @@ function SciMLBase.__solve(
         )
     )
 
-    resid, u, retcode = __get_result_from_sol(termination_condition, tc_cache, odesol)
+    resid, u, retcode = __get_result_from_sol(tc_cache, odesol)
 
     if save_idxs !== nothing
         u = u[save_idxs]
@@ -199,7 +203,7 @@ function SciMLBase.__solve(
     haskey(kwargs, :callback) && (callback = CallbackSet(callback, kwargs[:callback]))
     haskey(odesolve_kwargs, :callback) &&
         (callback = CallbackSet(callback, odesolve_kwargs[:callback]))
-    kwargs = pairs(Base.structdiff((; kwargs...), (; verbose = nothing)))
+    kwargs = pairs(__without_verbose(kwargs))
 
     # The transient trajectory of the continuous-Newton flow is irrelevant — only
     # the steady state (where g(y) = 0) matters, and it is pinned down by the
@@ -221,7 +225,7 @@ function SciMLBase.__solve(
         kwargs..., odesolve_kwargs..., callback, save_end = true
     )
 
-    u, retcode = __sicnm_result(termination_condition, tc_cache, odesol, n)
+    u, retcode = __sicnm_result(tc_cache, odesol, n)
     resid = if iip
         g(gbuf, u)
         gbuf
@@ -240,81 +244,17 @@ function SciMLBase.__solve(
     )
 end
 
-function __sicnm_result(::AbstractNonlinearTerminationMode, tc_cache, odesol, n)
-    u = last(odesol.u)[1:n]
-    retcode = ifelse(
-        odesol.retcode == ReturnCode.Terminated, ReturnCode.Success,
-        ReturnCode.Failure
+function __sicnm_result(tc_cache, odesol, n)
+    u, _, retcode = termination_condition_result(
+        tc_cache, last(odesol.u)[1:n], last(odesol.t), odesol.retcode
     )
     return u, retcode
 end
 
-function __sicnm_result(::AbstractSafeNonlinearTerminationMode, tc_cache, odesol, n)
-    u = last(odesol.u)[1:n]
-    retcode_tc = tc_cache.retcode
-    retcode = if odesol.retcode == ReturnCode.Terminated
-        ifelse(retcode_tc != ReturnCode.Default, retcode_tc, ReturnCode.Success)
-    elseif odesol.retcode == ReturnCode.Success
-        ReturnCode.Failure
-    else
-        odesol.retcode
-    end
-    return u, retcode
-end
-
-function __sicnm_result(::AbstractSafeBestNonlinearTerminationMode, tc_cache, odesol, n)
-    u = copy(tc_cache.u)
-    retcode_tc = tc_cache.retcode
-    retcode = if odesol.retcode == ReturnCode.Terminated
-        ifelse(retcode_tc != ReturnCode.Default, retcode_tc, ReturnCode.Success)
-    elseif odesol.retcode == ReturnCode.Success
-        ReturnCode.Failure
-    else
-        odesol.retcode
-    end
-    return u, retcode
-end
-
-function __get_result_from_sol(::AbstractNonlinearTerminationMode, tc_cache, odesol)
-    u, t = last(odesol.u), last(odesol.t)
-    du = odesol(t, Val{1})
-    return (
-        du, u,
-        ifelse(
-            odesol.retcode == ReturnCode.Terminated, ReturnCode.Success,
-            ReturnCode.Failure
-        ),
+function __get_result_from_sol(tc_cache, odesol)
+    u, t, retcode = termination_condition_result(
+        tc_cache, last(odesol.u), last(odesol.t), odesol.retcode
     )
-end
-
-function __get_result_from_sol(::AbstractSafeNonlinearTerminationMode, tc_cache, odesol)
-    u, t = last(odesol.u), last(odesol.t)
     du = odesol(t, Val{1})
-    retcode_tc = tc_cache.retcode
-
-    retcode = if odesol.retcode == ReturnCode.Terminated
-        ifelse(retcode_tc != ReturnCode.Default, retcode_tc, ReturnCode.Success)
-    elseif odesol.retcode == ReturnCode.Success
-        ReturnCode.Failure
-    else
-        odesol.retcode
-    end
-
-    return du, u, retcode
-end
-
-function __get_result_from_sol(::AbstractSafeBestNonlinearTerminationMode, tc_cache, odesol)
-    u, t = tc_cache.u, only(tc_cache.saved_values)
-    du = odesol(t, Val{1})
-    retcode_tc = tc_cache.retcode
-
-    retcode = if odesol.retcode == ReturnCode.Terminated
-        ifelse(retcode_tc != ReturnCode.Default, retcode_tc, ReturnCode.Success)
-    elseif odesol.retcode == ReturnCode.Success
-        ReturnCode.Failure
-    else
-        odesol.retcode
-    end
-
     return du, u, retcode
 end
