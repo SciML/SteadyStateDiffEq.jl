@@ -10,7 +10,7 @@ using LinearSolve: LinearSolve
 using SciMLBase: SciMLBase, CallbackSet, LinearProblem, NonlinearProblem, ODEProblem,
     SteadyStateProblem, get_du, init, isinplace, solve
 
-const infnorm = x -> norm(x, Inf)
+const infnorm = Base.Fix2(norm, Inf)
 
 include("algorithms.jl")
 include("solve.jl")
