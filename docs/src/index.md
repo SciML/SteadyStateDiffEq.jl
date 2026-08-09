@@ -15,17 +15,23 @@ Pkg.add("SteadyStateDiffEq")
 Use `SSRootfind` to solve the steady-state residual equation with a nonlinear solver:
 
 ```julia
-using SteadyStateDiffEq, NonlinearSolve
+using SciMLBase: SteadyStateProblem, solve
+using SteadyStateDiffEq
+using NonlinearSolve
 
-sol = solve(prob, SSRootfind(NewtonRaphson()))
+prob = SteadyStateProblem((u, p, t) -> 1 .- u, [0.0])
+sol = solve(prob, SSRootfind())
 ```
 
 Use `DynamicSS` to integrate the system until its derivative is close to zero:
 
 ```julia
-using SteadyStateDiffEq, OrdinaryDiffEq
+using SciMLBase: SteadyStateProblem, solve
+using SteadyStateDiffEq
+using Sundials: CVODE_BDF
 
-sol = solve(prob, DynamicSS(Tsit5()))
+prob = SteadyStateProblem((u, p, t) -> 1 .- u, [0.0])
+sol = solve(prob, DynamicSS(CVODE_BDF()); dt = 1.0)
 ```
 
 Use `SICNM` (the semi-implicit continuous Newton method) to solve the steady-state
@@ -34,8 +40,11 @@ differential-algebraic equation, until the residual is close to zero. This is mu
 robust than Newton's method on ill-conditioned problems such as power flow equations:
 
 ```julia
-using SteadyStateDiffEq, OrdinaryDiffEqRosenbrock
+using SciMLBase: SteadyStateProblem, solve
+using SteadyStateDiffEq
+using OrdinaryDiffEqRosenbrock: Rodas3d
 
+prob = SteadyStateProblem((u, p, t) -> 1 .- u, [0.0])
 sol = solve(prob, SICNM(Rodas3d()))
 ```
 

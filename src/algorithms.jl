@@ -1,27 +1,33 @@
 abstract type SteadyStateDiffEqAlgorithm <: SciMLBase.AbstractSteadyStateAlgorithm end
 
 """
-    SSRootfind(alg = nothing)
+    SSRootfind(alg = nothing) -> SSRootfind
 
 Solve a steady-state problem by converting it to a `NonlinearProblem` and calling a
 nonlinear solver.
 
-## Arguments
+# Arguments
 
   - `alg`: the nonlinear solver algorithm passed to `solve`. When `alg === nothing`,
     the default nonlinear solver is selected by the downstream solver package.
 
-## Fields
+# Fields
 
   - `alg`: nonlinear solver algorithm, or `nothing` to request downstream default
     selection.
 
-## Example
+# Example
 
-```julia
-using SteadyStateDiffEq, NonlinearSolve
+```jldoctest
+julia> using SciMLBase: SteadyStateProblem, solve
 
-sol = solve(prob, SSRootfind(NewtonRaphson()))
+julia> using SteadyStateDiffEq
+
+julia> using NonlinearSolve
+
+julia> prob = SteadyStateProblem((u, p, t) -> 1 .- u, [0.0]);
+
+julia> sol = solve(prob, SSRootfind());
 ```
 
 !!! note
@@ -36,7 +42,7 @@ end
 SSRootfind() = SSRootfind(nothing)
 
 """
-    DynamicSS(alg = nothing; tspan = Inf)
+    DynamicSS(alg = nothing; tspan = Inf) -> DynamicSS
 
 Solve a steady-state problem by evolving the corresponding ODE until the derivative is
 close to zero.
@@ -45,29 +51,33 @@ close to zero.
 `reltol` keywords passed to `solve` control the steady-state termination condition. Use
 `odesolve_kwargs` to pass separate keyword arguments to the ODE solve.
 
-## Arguments
+# Arguments
 
   - `alg`: the ODE solver algorithm passed to `solve`. When `alg === nothing`, the
     default ODE solver is selected by the downstream solver package.
 
-## Keyword Arguments
+# Keywords
 
   - `tspan`: the time span used for the ODE solve. If `tspan` is a number, it is
     equivalent to `(zero(tspan), tspan)`.
 
-## Fields
+# Fields
 
   - `alg`: ODE solver algorithm, or `nothing` to request downstream default selection.
   - `tspan`: time span passed to the internal ODE solve.
 
-## Example
+# Example
 
-```julia
-using SteadyStateDiffEq, OrdinaryDiffEq
-sol = solve(prob, DynamicSS(Tsit5()))
+```jldoctest
+julia> using SciMLBase: SteadyStateProblem, solve
 
-using Sundials
-sol = solve(prob, DynamicSS(CVODE_BDF()); dt = 1.0)
+julia> using SteadyStateDiffEq
+
+julia> using Sundials: CVODE_BDF
+
+julia> prob = SteadyStateProblem((u, p, t) -> 1 .- u, [0.0]);
+
+julia> sol = solve(prob, DynamicSS(CVODE_BDF()); dt = 1.0);
 ```
 
 !!! note
@@ -91,7 +101,7 @@ function DiffEqBase.prepare_alg(alg::DynamicSS, u0, p, f)
 end
 
 """
-    SICNM(alg; tspan = Inf)
+    SICNM(alg = nothing; tspan = Inf, linsolve = nothing) -> SICNM
 
 The Semi-Implicit Continuous Newton Method for solving a steady-state (or nonlinear)
 problem `0 = g(y)`. The problem is converted into the differential-algebraic system
@@ -133,16 +143,18 @@ consistent initialization `z(0) = -J(y₀)⁻¹ g(y₀)`, whose linear solve is 
 [LinearSolve.jl](https://docs.sciml.ai/LinearSolve/stable/) and is configurable through
 the `linsolve` keyword.
 
-## Arguments
+# Arguments
 
   - `alg`: the ODE solver algorithm used to integrate the DAE. It must support mass
-    matrices and should be stiffly accurate and L-stable. [`Rodas3d`](https://docs.sciml.ai/DiffEqDocs/stable/solvers/dae_solve/)
-    from OrdinaryDiffEqRosenbrock.jl was constructed specifically for this method and is
-    the recommended choice; other Rosenbrock methods such as `Rodas4` or `Rodas5P` also
-    work well. The linear solver used for the implicit stages of the DAE integration is
-    configured on this ODE algorithm itself (e.g. `Rodas3d(; linsolve = KrylovJL_GMRES())`).
+    matrices and should be stiffly accurate and L-stable.
+    [`Rodas3d`](https://docs.sciml.ai/DiffEqDocs/stable/solvers/dae_solve/) from
+    OrdinaryDiffEqRosenbrock.jl was constructed specifically for this method and is the
+    recommended choice; other Rosenbrock methods such as `Rodas4` or `Rodas5P` also work
+    well. The linear solver used for the implicit stages of the DAE integration is
+    configured on this ODE algorithm itself (e.g.
+    `Rodas3d(; linsolve = KrylovJL_GMRES())`).
 
-## Keywords
+# Keywords
 
   - `tspan`: the time span used for the ODE solve. If `tspan` is a number, it is
     equivalent to `(zero(tspan), tspan)`. Since the residual decays like ``e^{-t}``
@@ -153,15 +165,21 @@ the `linsolve` keyword.
     `nothing`, which lets LinearSolve select an appropriate factorization for the
     Jacobian. Pass e.g. `linsolve = KrylovJL_GMRES()` for large or sparse systems.
 
-## Example
+# Example
 
-```julia
-using SteadyStateDiffEq, OrdinaryDiffEqRosenbrock
+```jldoctest
+julia> using SciMLBase: SteadyStateProblem, solve
 
-sol = solve(prob, SICNM(Rodas3d()))
+julia> using SteadyStateDiffEq
+
+julia> using OrdinaryDiffEqRosenbrock: Rodas3d
+
+julia> prob = SteadyStateProblem((u, p, t) -> 1 .- u, [0.0]);
+
+julia> sol = solve(prob, SICNM(Rodas3d()));
 ```
 
-## References
+# References
 
 Yu, R., Gu, W., Xu, Y., Lu, S. (2024). Semi-implicit Continuous Newton Method for Power
 Flow Analysis. arXiv:2312.02809. https://arxiv.org/abs/2312.02809
