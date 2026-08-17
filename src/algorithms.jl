@@ -1,3 +1,81 @@
+"""
+    SteadyStateDiffEqAlgorithm <: SciMLBase.AbstractSteadyStateAlgorithm
+
+Developer interface for steady-state algorithms implemented in or extending
+SteadyStateDiffEq.jl. Application code should use a concrete algorithm such as
+[`SSRootfind`](@ref), [`DynamicSS`](@ref), or [`SICNM`](@ref) rather than
+subtyping this type.
+
+# Required Interface
+
+A concrete subtype must implement the generic SciMLBase solve hook:
+
+```julia
+SciMLBase.__solve(
+    prob::SciMLBase.AbstractSteadyStateProblem,
+    alg::MySteadyStateAlgorithm,
+    args...;
+    kwargs...
+)
+```
+
+The method must construct its result with
+`SciMLBase.build_solution(prob, alg, u, resid; retcode = ...)`. The returned
+solution must preserve the input `prob`, report the final state in `u`, report
+the corresponding steady-state residual in `resid`, and use a
+`SciMLBase.ReturnCode` that states whether the requested convergence criterion
+was met. An implementation may restrict the problem subtypes it supports, but
+that restriction must be documented and rejected with a clear error.
+
+# Constructor Rules
+
+Algorithm-specific choices belong in the algorithm constructor and its fields,
+not in new keywords to the common `solve` interface. Concrete algorithm
+docstrings must describe every field, its type or accepted values, and its
+default. Common keywords such as `abstol`, `reltol`, `callback`, and
+`save_idxs` should retain their SciMLBase meaning unless the algorithm
+docstring explicitly documents a different interpretation.
+
+# Optional Traits
+
+Implement the relevant SciMLBase traits when an algorithm has restrictions on
+adaptivity, automatic differentiation, complex states, or arbitrary number
+types. Trait methods must describe the actual implementation capability; they
+must not be used to bypass unsupported input types. If an algorithm delegates
+to an inner algorithm, its trait methods should reflect the inner algorithm's
+capabilities when that is part of the contract.
+
+# Extension Rules
+
+Extensions should dispatch on the public SciMLBase problem and algorithm
+interfaces. They must not depend on private helpers or concrete storage fields
+of `SteadyStateDiffEq` problems. The extension should be tested with a minimal
+generic `AbstractSteadyStateProblem` solve path, independently of the concrete
+algorithms shipped by this package.
+
+# Example
+
+```julia
+using SciMLBase
+using SteadyStateDiffEq
+
+struct MySteadyStateAlgorithm <: SteadyStateDiffEqAlgorithm end
+
+function SciMLBase.__solve(
+        prob::SciMLBase.AbstractSteadyStateProblem,
+        ::MySteadyStateAlgorithm,
+        args...;
+        kwargs...
+    )
+    u = copy(prob.u0)
+    resid = zero.(u)
+    return SciMLBase.build_solution(
+        prob, MySteadyStateAlgorithm(), u, resid;
+        retcode = SciMLBase.ReturnCode.Success
+    )
+end
+```
+"""
 abstract type SteadyStateDiffEqAlgorithm <: SciMLBase.AbstractSteadyStateAlgorithm end
 
 """
@@ -164,6 +242,14 @@ the `linsolve` keyword.
     used for the consistent initialization solve `z(0) = -J(y₀)⁻¹ g(y₀)`. Defaults to
     `nothing`, which lets LinearSolve select an appropriate factorization for the
     Jacobian. Pass e.g. `linsolve = KrylovJL_GMRES()` for large or sparse systems.
+
+# Fields
+
+  - `alg`: ODE solver algorithm used for the DAE integration, or `nothing` to request
+    downstream default selection.
+  - `tspan`: time span passed to the internal DAE solve.
+  - `linsolve`: LinearSolve algorithm used for consistent initialization, or `nothing`
+    to select LinearSolve's default factorization.
 
 # Example
 
