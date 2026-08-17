@@ -7,6 +7,7 @@ using DiffEqCallbacks: TerminateSteadyState
 using ForwardDiff: ForwardDiff
 using LinearAlgebra: Diagonal, norm
 using LinearSolve: LinearSolve
+using SciMLPublic: @public
 using SciMLBase: SciMLBase, CallbackSet, LinearProblem, NonlinearProblem, ODEProblem,
     SteadyStateProblem, get_du, init, isinplace, solve
 
@@ -16,5 +17,6 @@ include("algorithms.jl")
 include("solve.jl")
 
 export SSRootfind, DynamicSS, SICNM
+@public SteadyStateDiffEqAlgorithm
 
 end
