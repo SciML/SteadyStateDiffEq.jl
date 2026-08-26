@@ -9,7 +9,8 @@ using LinearAlgebra: Diagonal, norm
 using LinearSolve: LinearSolve
 using SciMLPublic: @public
 using SciMLBase: SciMLBase, CallbackSet, LinearProblem, NonlinearProblem, ODEProblem,
-    SteadyStateProblem, get_du, init, isinplace, solve
+    NonlinearSolution, ReturnCode, SteadyStateProblem, SteadyStateSolution, get_du, init,
+    isinplace, remake, solve, successful_retcode
 
 const infnorm = Base.Fix2(norm, Inf)
 
@@ -18,6 +19,8 @@ include("solve.jl")
 include("precompilation.jl")
 
 export SSRootfind, DynamicSS, SICNM
+export NonlinearProblem, NonlinearSolution, ReturnCode, SteadyStateProblem,
+    SteadyStateSolution, remake, solve, successful_retcode
 @public SteadyStateDiffEqAlgorithm
 
 end
