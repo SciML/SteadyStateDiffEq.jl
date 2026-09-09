@@ -51,6 +51,5 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 test = ["Symbolics", "OrdinaryDiffEq", "NonlinearSolve", "ModelingToolkit", "SciMLTesting", "Test", "SafeTestsets", "Sundials"]
 
 [sources]
-DiffEqBase = {url = "https://github.com/ChrisRackauckas-Claude/OrdinaryDiffEq.jl.git", rev = "fix-32bit-interp-points-range", subdir = "lib/DiffEqBase"}
 Sundials = {url = "https://github.com/ChrisRackauckas-Claude/Sundials.jl.git", rev = "fix-32bit-nvector-length"}
 
