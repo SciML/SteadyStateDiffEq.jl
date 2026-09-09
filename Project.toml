@@ -14,8 +14,6 @@ PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 SciMLBase = "0bca4576-84f4-4d90-8ffe-ffa030f20462"
 SciMLPublic = "431bcebd-1456-4ced-9d72-93c2757fff0b"
 
-[sources]
-Sundials = {url = "https://github.com/ChrisRackauckas-Claude/Sundials.jl.git", rev = "fix-32bit-nvector-length"}
 
 [compat]
 Symbolics = "7.39.2"
