@@ -11,6 +11,23 @@ struct NonlinearScaling{P, U, F}
     residual_scales::F
 end
 
+# Retain the transformation independently of symbolic indexing: SCC decomposition
+# needs the original equations, while the scaled problem has numerical coordinates.
+struct ScaledResidual{IIP, P, U, F}
+    prob::P
+    variable_scales::U
+    residual_scales::F
+end
+
+function (f::ScaledResidual{true})(res, z, p)
+    f.prob.f(res, f.variable_scales .* z, p)
+    res ./= f.residual_scales
+    return nothing
+end
+
+(f::ScaledResidual{false})(z, p) =
+    f.prob.f(f.variable_scales .* z, p) ./ f.residual_scales
+
 """
     scaled_prob, scaling = scale(prob::NonlinearProblem;
         variable_scales=nothing, residual_scales=nothing)
@@ -60,15 +77,7 @@ function scale(prob::NonlinearProblem; variable_scales = nothing, residual_scale
         _scaling_check_scales(residual_scales, f0, "residual_scales")
     end
     _scaling_check_scales(sf, f0, "residual_scales")
-    scaled_f = if isinplace(prob)
-        function (res, z, p)
-            prob.f(res, su .* z, p)
-            res ./= sf
-            return nothing
-        end
-    else
-        (z, p) -> prob.f(su .* z, p) ./ sf
-    end
+    scaled_f = ScaledResidual{isinplace(prob), typeof(prob), typeof(su), typeof(sf)}(prob, su, sf)
     jac = if prob.f.jac === nothing
         nothing
     elseif isinplace(prob)
@@ -91,6 +100,50 @@ function scale(prob::NonlinearProblem; variable_scales = nothing, residual_scale
         f, u0 ./ su, prob.p, prob.problem_type; prob.kwargs...
     )
     return scaled, NonlinearScaling(prob, su, sf)
+end
+
+struct SteadyStateScaling{P, S}
+    prob::P
+    nonlinear_scaling::S
+end
+
+"""
+    scaled_prob, scaling = scale(prob::SteadyStateProblem; kwargs...)
+
+Form the steady nonlinear equations and apply [`scale`](@ref). With ModelingToolkit
+loaded, compile the retained source model at steady state and transfer the problem's
+current states and parameters by symbolic identity. This preserves the SCC structure
+and reconstructs eliminated states when calling `unscale`. No initialization solve
+or time integration is performed. Conservation constraints must be part of the model.
+
+The returned problem is an ordinary `NonlinearProblem`. Scale overrides refer to
+its steady nonlinear coordinates, which can differ from the dynamic state vector.
+"""
+function scale(prob::SteadyStateProblem; kwargs...)
+    nlprob = _steady_nonlinear(prob, prob.f.sys)
+    scaled, mapping = scale(nlprob; kwargs...)
+    return scaled, SteadyStateScaling(prob, mapping)
+end
+
+_steady_nonlinear(prob, sys) = NonlinearProblem(prob)
+
+function unscale(sol::NonlinearSolution, mapping::SteadyStateScaling)
+    nlsol = unscale(sol, mapping.nonlinear_scaling)
+    prob, u = _steady_recover(mapping.prob, nlsol, mapping.prob.f.sys)
+    resid = if isinplace(prob)
+        r = similar(u)
+        prob.f(r, u, prob.p, Inf)
+        r
+    else
+        prob.f(u, prob.p, Inf)
+    end
+    return SciMLBase.build_solution(prob, sol.alg, u, resid;
+        sol.retcode, sol.stats, original = sol)
+end
+
+function _steady_recover(prob, nlsol, sys)
+    original = prob.p === nlsol.prob.p ? prob : remake(prob; p = nlsol.prob.p)
+    return original, nlsol.u
 end
 
 """
