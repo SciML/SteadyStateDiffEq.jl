@@ -16,11 +16,13 @@ const infnorm = Base.Fix2(norm, Inf)
 
 include("algorithms.jl")
 include("solve.jl")
+include("scaling.jl")
 include("precompilation.jl")
 
 export SSRootfind, DynamicSS, SICNM
 export NonlinearProblem, NonlinearSolution, ReturnCode, SteadyStateProblem,
     SteadyStateSolution, remake, solve, successful_retcode
 @public SteadyStateDiffEqAlgorithm
+@public scale, unscale, NonlinearScaling
 
 end
