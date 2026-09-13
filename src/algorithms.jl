@@ -82,12 +82,17 @@ abstract type SteadyStateDiffEqAlgorithm <: SciMLBase.AbstractSteadyStateAlgorit
     SSRootfind(alg = nothing) -> SSRootfind
 
 Solve a steady-state problem by converting it to a `NonlinearProblem` and calling a
-nonlinear solver.
+nonlinear solver. An `SCCNonlinearProblem` is passed directly to the downstream SCC
+solver, preserving its linear and nonlinear blocks and their dependencies. The SCC
+solver implementation must be loaded via `SCCNonlinearSolve.jl` (also loaded by
+`ModelingToolkit.jl`).
 
 # Arguments
 
   - `alg`: the nonlinear solver algorithm passed to `solve`. When `alg === nothing`,
     the default nonlinear solver is selected by the downstream solver package.
+    For SCC problems, an `SCCNonlinearSolve.SCCAlg` can configure the linear and
+    nonlinear block solvers separately.
 
 # Fields
 

@@ -27,6 +27,7 @@ NonlinearSolveBase = "2.40"
 OrdinaryDiffEq = "7"
 PrecompileTools = "1.2.1"
 SafeTestsets = "0.1"
+SCCNonlinearSolve = "1.13.1"
 SciMLBase = "3.6"
 SciMLPublic = "1"
 SciMLTesting = "2.4"
@@ -39,9 +40,10 @@ ModelingToolkit = "961ee093-0014-501f-94e3-6117800e7a78"
 NonlinearSolve = "8913a72c-1f9b-4ce2-8d82-65094dcecaec"
 OrdinaryDiffEq = "1dea7af3-3e70-54e6-95c3-0bf5283fa5ed"
 SafeTestsets = "1bc83da4-3b8d-516f-aca4-4fe02f6d838f"
+SCCNonlinearSolve = "9dfe8606-65a1-4bb3-9748-cb89d1561431"
 SciMLTesting = "09d9d899-5365-40a9-917a-5f67fddea283"
 Sundials = "c3572dad-4567-51f8-b174-8c6c989267f4"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["OrdinaryDiffEq", "NonlinearSolve", "ModelingToolkit", "SciMLTesting", "Test", "SafeTestsets", "Sundials"]
+test = ["OrdinaryDiffEq", "NonlinearSolve", "ModelingToolkit", "SciMLTesting", "Test", "SafeTestsets", "Sundials", "SCCNonlinearSolve"]
