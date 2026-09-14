@@ -137,6 +137,15 @@ close to zero.
 `reltol` keywords passed to `solve` control the steady-state termination condition. Use
 `odesolve_kwargs` to pass separate keyword arguments to the ODE solve.
 
+An `SCCNonlinearProblem` can also be solved directly: it is integrated as the
+pseudo-transient system ``\\dot{u} = g(u)``, where ``g`` is the concatenated
+residual of the SCC blocks evaluated at the trial state (upstream trial values
+reach each block's parameters through `explicitfuns!`, as in the SCC solve).
+As with `DynamicSS` on a `NonlinearProblem`, convergence requires this residual
+to be an attracting vector field — it is the same vector field
+`solve(::NonlinearProblem, ::DynamicSS)` would produce for the underlying
+system, including its variable-to-equation ordering.
+
 # Arguments
 
   - `alg`: the ODE solver algorithm passed to `solve`. When `alg === nothing`, the
