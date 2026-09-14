@@ -150,6 +150,45 @@ end
     end
 end
 
+# A `SteadyStateProblem` recording an `SCCNonlinearProblem` lowering is solved
+# through it: `DynamicSS` runs the sequential block solve and `SSRootfind`
+# forwards the lowering to the nonlinear solver. The solution is expressed on
+# the lowering (whose ordering need not match `prob.u0`), so `sol.prob` is the
+# `SCCNonlinearProblem`.
+@testset "SteadyStateProblem with an SCC lowering" begin
+    f_iip(du, u, p, t) = (du .= 1 .- u)
+    f_oop(u, p, t) = 1 .- u
+    @testset "iip=$iip builder=$builder alg=$alg" for iip in (false, true),
+            builder in (false, true),
+            alg in (
+                DynamicSS(Tsit5()),
+                SSRootfind(NewtonRaphson()),
+                SSRootfind(SCCAlg(; nlalg = NewtonRaphson())),
+            )
+
+        sccprob = dynamicss_scc_problem(iip, false)
+        lowered = builder ? (prob -> sccprob) : sccprob
+        prob = SteadyStateProblem(
+            iip ? f_iip : f_oop, [0.0, 0.0]; lowered_problem = lowered
+        )
+        sol = solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        @test successful_retcode(sol)
+        @test sol.u ≈ [1, 2, 1, 2] atol = 1.0e-8
+        @test sol.prob === sccprob
+        @test sol.original !== nothing
+    end
+
+    # `remake`d values reach a callable lowering through the materialized
+    # problem, so the block solve sees the new operating point.
+    sccprob = dynamicss_scc_problem(false, false)
+    prob = SteadyStateProblem(
+        f_oop, [0.0, 0.0]; lowered_problem = prob -> sccprob
+    )
+    @test NonlinearProblem(prob) === sccprob
+    prob2 = remake(prob; u0 = [5.0, 6.0])
+    @test NonlinearProblem(prob2) === sccprob
+end
+
 @testset "SSRootfind on a ModelingToolkit SCC decomposition" begin
     @variables a(t) b(t) x(t) y(t) c(t) d(t) [irreducible = true]
     @named model = System(
@@ -238,7 +277,7 @@ end
     @test sol.original[2].original.original isa SciMLBase.AbstractODESolution
 end
 
-@testset "DynamicSS on a SteadyStateProblem with SCC initialization" begin
+@testset "SteadyStateProblem solves through an SCC lowering" begin
     @variables a(t) b(t) x(t) y(t) c(t) d(t) [irreducible = true]
     @named model = System(
         [
@@ -256,7 +295,37 @@ end
 
     @test prob.f.initialization_data.initializeprob isa SCCNonlinearProblem
 
-    sol = solve(prob, DynamicSS(Tsit5()); abstol = 1.0e-10, reltol = 1.0e-10)
+    states = [a, b, x, y, c, d]
+    expected = [1, 2, 1, 2, 3, 4]
+
+    sol = solve(
+        prob, SSRootfind(NewtonRaphson()); abstol = 1.0e-12, reltol = 1.0e-12
+    )
     @test successful_retcode(sol)
-    @test sol[[a, b, x, y, c, d]] ≈ [1, 2, 1, 2, 3, 4] atol = 1.0e-8
+    @test sol[states] ≈ expected atol = 1.0e-9
+    # With a stored SCC lowering the solve happens on the `SCCNonlinearProblem`
+    # and `sol` is expressed on it; older MTK leaves `lowered_problem` empty.
+    if prob.lowered_problem !== nothing
+        @test sol.prob isa SCCNonlinearProblem
+    end
+end
+
+@testset "DynamicSS on a SteadyStateProblem with an SCC lowering" begin
+    # Scalar nonlinear block `x' = 3 - x^3` has a unique real root `∛3`, so the
+    # per-block pseudo-transient solve and the monolithic integration converge
+    # to the same steady state.
+    @variables a(t) b(t) x(t) [irreducible = true]
+    @named model = System(
+        [D(a) ~ 5 - 3a - b, D(b) ~ 5 - a - 2b, D(x) ~ a + b - x^3], t
+    )
+    sys = mtkcompile(model)
+    prob = SteadyStateProblem(sys, [a => 0.8, b => 1.8, x => 0.8])
+
+    sol = solve(prob, DynamicSS(); abstol = 1.0e-10, reltol = 1.0e-10)
+    @test successful_retcode(sol)
+    @test sol[[a, b, x]] ≈ [1, 2, cbrt(3)] atol = 1.0e-8
+    if prob.lowered_problem !== nothing
+        @test sol.prob isa SCCNonlinearProblem
+        @test sol.original isa Tuple{SciMLBase.LinearSolution, NonlinearSolution}
+    end
 end

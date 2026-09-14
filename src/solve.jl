@@ -10,8 +10,23 @@ function SciMLBase.__solve(
         args...; kwargs...
     )
     nlprob = NonlinearProblem(prob)
-    nlsol = solve(nlprob, alg.alg, args...; kwargs...)
-    return __build_ssrootfind_solution(prob, nlsol)
+    fwd = kwargs
+    if nlprob isa SciMLBase.SCCNonlinearProblem
+        # The nonlinear solve pipeline injects `alias`/`verbose` as nonlinear
+        # specifier types, which `LinearProblem` blocks in the SCC solve do not
+        # understand.
+        fwd = (; (n => v for (n, v) in pairs(kwargs) if n !== :alias && n !== :verbose)...)
+    end
+    nlsol = solve(nlprob, alg.alg, args...; fwd...)
+    # A stored `lowered_problem` (e.g. an `SCCNonlinearProblem`) solves in the
+    # lowering's own state ordering, so its solution is expressed on the
+    # lowering rather than the steady-state problem.
+    solprob = if prob isa SteadyStateProblem && prob.lowered_problem !== nothing
+        nlprob
+    else
+        prob
+    end
+    return __build_ssrootfind_solution(solprob, nlsol)
 end
 
 # An SCCNonlinearProblem has no top-level `u0`/`kwargs` fields, so it cannot go
@@ -101,6 +116,25 @@ function SciMLBase.__solve(
         save_idxs = nothing, termination_condition = NonlinearSolveBase.NormTerminationMode(infnorm),
         alias = SciMLBase.NonlinearAliasSpecifier(), kwargs...
     )
+    # A `SteadyStateProblem` that records an `SCCNonlinearProblem` lowering is
+    # solved block-sequentially in the lowering's ordering instead of one
+    # monolithic integration.
+    lp = prob isa SteadyStateProblem ? prob.lowered_problem : nothing
+    if lp !== nothing
+        lp isa SciMLBase.AbstractSciMLProblem || (lp = lp(prob))
+        if lp isa SciMLBase.SCCNonlinearProblem
+            sccsol = solve(
+                lp, alg, args...; abstol, reltol, odesolve_kwargs,
+                termination_condition, alias, kwargs...
+            )
+            save_idxs === nothing && return sccsol
+            return SciMLBase.build_solution(
+                lp, sccsol.alg, sccsol.u[save_idxs], sccsol.resid[save_idxs];
+                retcode = sccsol.retcode, original = sccsol
+            )
+        end
+    end
+
     tspan = __get_tspan(prob.u0, alg)
 
     f = if prob isa SteadyStateProblem
