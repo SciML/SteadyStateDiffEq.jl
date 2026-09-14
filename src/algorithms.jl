@@ -84,6 +84,14 @@ abstract type SteadyStateDiffEqAlgorithm <: SciMLBase.AbstractSteadyStateAlgorit
 Solve a steady-state problem by converting it to a `NonlinearProblem` and calling a
 nonlinear solver.
 
+An `SCCNonlinearProblem` can also be solved directly: it is forwarded to `alg`
+unchanged, preserving its decomposition into linear and nonlinear blocks. This
+requires the SCC solver implementation from `SCCNonlinearSolve.jl` to be loaded
+(it is a dependency of `NonlinearSolve.jl` and `ModelingToolkit.jl`); `alg` may be
+`nothing` or a nonlinear solver algorithm (wrapped in `SCCNonlinearSolve.SCCAlg`
+automatically), or an `SCCAlg` configured with separate linear and nonlinear
+block solvers.
+
 # Arguments
 
   - `alg`: the nonlinear solver algorithm passed to `solve`. When `alg === nothing`,

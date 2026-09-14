@@ -1,13 +1,29 @@
+function __build_ssrootfind_solution(prob, nlsol)
+    return SciMLBase.build_solution(
+        prob, SSRootfind(nlsol.alg), nlsol.u, nlsol.resid;
+        nlsol.retcode, nlsol.stats, nlsol.left, nlsol.right, original = nlsol
+    )
+end
+
 function SciMLBase.__solve(
         prob::SciMLBase.AbstractSteadyStateProblem, alg::SSRootfind,
         args...; kwargs...
     )
     nlprob = NonlinearProblem(prob)
     nlsol = solve(nlprob, alg.alg, args...; kwargs...)
-    return SciMLBase.build_solution(
-        prob, SSRootfind(nlsol.alg), nlsol.u, nlsol.resid;
-        nlsol.retcode, nlsol.stats, nlsol.left, nlsol.right, original = nlsol
+    return __build_ssrootfind_solution(prob, nlsol)
+end
+
+# An SCCNonlinearProblem has no top-level `u0`/`kwargs` fields, so it cannot go
+# through the generic AbstractNonlinearProblem solve preprocessing. Forward it
+# directly to the wrapped algorithm instead, which dispatches to the SCC solver
+# loaded downstream (SCCNonlinearSolve.jl).
+function SciMLBase.solve(
+        prob::SciMLBase.SCCNonlinearProblem, alg::SSRootfind,
+        args...; kwargs...
     )
+    nlsol = solve(prob, alg.alg, args...; kwargs...)
+    return __build_ssrootfind_solution(prob, nlsol)
 end
 
 __get_tspan(u0, alg::Union{DynamicSS, SICNM}) = __get_tspan(u0, alg.tspan)
