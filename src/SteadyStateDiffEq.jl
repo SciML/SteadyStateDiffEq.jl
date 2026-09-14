@@ -5,13 +5,13 @@ import DiffEqBase
 using NonlinearSolveBase: NonlinearSolveBase, termination_condition_result
 using DiffEqCallbacks: TerminateSteadyState
 using ForwardDiff: ForwardDiff
-using LinearAlgebra: Diagonal, mul!, norm
+using LinearAlgebra: Diagonal, norm
 using LinearSolve: LinearSolve
 using SciMLPublic: @public
 using SciMLBase: SciMLBase, CallbackSet, LinearProblem, NonlinearProblem, ODEProblem,
     NonlinearSolution, ReturnCode, SteadyStateProblem, SteadyStateSolution, get_du, init,
     isinplace, remake, solve, successful_retcode
-using SymbolicIndexingInterface: parameter_values, state_values
+using SymbolicIndexingInterface: parameter_values
 
 const infnorm = Base.Fix2(norm, Inf)
 

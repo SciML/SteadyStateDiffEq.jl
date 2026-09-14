@@ -26,109 +26,61 @@ function SciMLBase.solve(
     return __build_ssrootfind_solution(prob, nlsol)
 end
 
-# `explicitfuns![i]` receives the upstream blocks' trial values as solution-like
-# objects: ModelingToolkit's generated functions index `sols[j][k]` while its
-# cache copier reads `sols[j].u`.
-struct SCCTrialSolution{U}
-    u::U
-end
-Base.getindex(sol::SCCTrialSolution, i) = sol.u[i]
-Base.length(sol::SCCTrialSolution) = length(sol.u)
-
-function __scc_block_length(block)
-    u_i = state_values(block)
-    return u_i === nothing ? length(block.b) : length(u_i)
-end
-
-# The vector field for `LinearProblem` blocks is `b - A * u`: `calculate_A_b` in
-# ModelingToolkit produces `A * u - b = -expr`, and the same convention gives
-# decaying dynamics for directly constructed positive-definite `A * u = b`.
-function __scc_block_residual!(resid, u, block::LinearProblem)
-    # `remake` recomputes `A` and `b` from the parameter cache that `explicitfun`
-    # just updated; for a plain `LinearProblem` it is an identity copy.
-    block = remake(block; A = block.A, b = block.b)
-    mul!(resid, block.A, u)
-    resid .= block.b .- resid
-    return resid
-end
-
-# The `λ = 1` end of a `HomotopyProblem` block is the actual system.
-function __scc_block_residual!(resid, u, block::SciMLBase.HomotopyProblem)
-    if isinplace(block)
-        block.f(resid, u, block.p, last(block.λspan))
-    else
-        resid .= block.f(u, block.p, last(block.λspan))
-    end
-    return resid
-end
-
-function __scc_block_residual!(resid, u, block)
-    if isinplace(block)
-        block.f(resid, u, block.p)
-    else
-        resid .= block.f(u, block.p)
-    end
-    return resid
-end
-
-function __scc_residual!(du, u, prob, sols)
-    base = 0
-    for i in eachindex(prob.probs)
-        block = prob.probs[i]
-        idxs = (base + 1):(base + __scc_block_length(block))
-        SciMLBase.invoke_with_despecialized_parameters(
-            prob.explicitfuns![i], (block.p, view(sols, 1:(i - 1)))
-        )
-        __scc_block_residual!(view(du, idxs), view(u, idxs), block)
-        sols[i] = SCCTrialSolution(view(u, idxs))
-        base = last(idxs)
-    end
-    return du
-end
-
-# ODE right-hand side `du = resid(u)` for `DynamicSS`: the concatenated block
-# residuals in SCC order, evaluated against the trial state rather than solved
-# block-wise. Upstream trial values reach each block's parameter cache through
-# `explicitfuns!` exactly as in the SCC solve.
-struct SCCResidualRHS{P, S}
-    prob::P
-    sols::S
-end
-function (f::SCCResidualRHS)(du, u, p, t)
-    __scc_residual!(du, u, f.prob, f.sols)
-    return nothing
-end
-
-function __scc_dynamicss_u0(prob)
-    u0 = state_values(prob)
-    u0 === nothing || return float.(u0)
-    # An all-`LinearProblem` SCC problem carries no states; start at zero.
-    n = sum(__scc_block_length, prob.probs)
-    T = mapreduce(block -> eltype(block.b), promote_type, prob.probs)
-    return zeros(T, n)
-end
-
-# `SCCNonlinearProblem` has no top-level `u0`/`kwargs`/`f` to feed the generic
-# nonlinear solve path, so it cannot reach `__solve` directly. Wrap its residual
-# as a `SteadyStateProblem` for the ODE integration and wrap the result back on
-# the original problem. The problem is copied since `explicitfuns!` mutate the
-# blocks' parameter caches on every residual evaluation.
+# `DynamicSS` on an `SCCNonlinearProblem` solves the blocks sequentially in SCC
+# order: each block's parameter cache is updated from the upstream solutions
+# through `explicitfuns!`, `LinearProblem` blocks are solved directly, and the
+# remaining blocks are integrated to steady state by `DynamicSS` on the block
+# residual. `explicitfuns!` mutate the block caches, matching the
+# `SCCNonlinearSolve` protocol; each upstream solution is stripped to a plain
+# solution so generated explicit functions can index `sols[j][k]`/`sols[j].u`.
 function SciMLBase.solve(
         prob::SciMLBase.SCCNonlinearProblem, alg::DynamicSS,
         args...; kwargs...
     )
-    work = deepcopy(prob)
-    sols = Vector{SCCTrialSolution}(undef, length(work.probs))
-    f = SciMLBase.ODEFunction{true}(SCCResidualRHS(work, sols))
-    p = something(parameter_values(work), SciMLBase.NullParameters())
-    sssol = SciMLBase.__solve(
-        SteadyStateProblem(f, __scc_dynamicss_u0(work), p), alg, args...;
-        kwargs...
-    )
-    return SciMLBase.build_solution(
-        prob, sssol.alg, sssol.u, sssol.resid;
-        sssol.retcode, sssol.stats, original = sssol
-    )
+    sols = ()
+    for i in eachindex(prob.probs)
+        block = prob.probs[i]
+        SciMLBase.invoke_with_despecialized_parameters(
+            prob.explicitfuns![i], (parameter_values(block), sols)
+        )
+        _sol = if block isa LinearProblem
+            A, b = block.A, block.b
+            # `remake` recomputes `A` and `b` through a `SymbolicLinearInterface`
+            # from the cache that `explicitfun` just updated; for a plain
+            # `LinearProblem` it is an identity copy.
+            linsol = SciMLBase.solve(remake(block; A, b), nothing)
+            resid = linsol.resid === nothing ? A * linsol.u - b : linsol.resid
+            SciMLBase.build_linear_solution(
+                nothing, linsol.u, resid, nothing; retcode = linsol.retcode
+            )
+        else
+            # `HomotopyProblem` has no `solve` preprocessing support
+            # (`get_concrete_problem` is only defined for `NonlinearProblem`
+            # and `NonlinearLeastSquaresProblem`), so it goes through `__solve`
+            # directly.
+            sssol = if block isa SciMLBase.HomotopyProblem
+                SciMLBase.__solve(block, alg, args...; kwargs...)
+            else
+                SciMLBase.solve(block, alg, args...; kwargs...)
+            end
+            SciMLBase.build_solution(
+                block, nothing, sssol.u, sssol.resid;
+                retcode = sssol.retcode, original = sssol
+            )
+        end
+        sols = (sols..., _sol)
+    end
+
+    u = vcat(map(sol -> sol.u, sols)...)
+    resid = vcat(map(sol -> sol.resid, sols)...)
+    retcode = SciMLBase.ReturnCode.Success
+    for s in sols
+        if !SciMLBase.successful_retcode(s)
+            retcode = s.retcode
+            break
+        end
+    end
+    return SciMLBase.build_solution(prob, alg, u, resid; retcode, original = sols)
 end
 
 __get_tspan(u0, alg::Union{DynamicSS, SICNM}) = __get_tspan(u0, alg.tspan)
@@ -153,6 +105,14 @@ function SciMLBase.__solve(
 
     f = if prob isa SteadyStateProblem
         prob.f
+    elseif prob isa SciMLBase.HomotopyProblem
+        # The `λ = λspan[2]` end of the homotopy is the actual system.
+        λ1 = last(prob.λspan)
+        if isinplace(prob)
+            (du, u, p, t) -> prob.f(du, u, p, λ1)
+        else
+            (u, p, t) -> prob.f(u, p, λ1)
+        end
     elseif prob isa NonlinearProblem
         if isinplace(prob)
             (du, u, p, t) -> prob.f(du, u, p)

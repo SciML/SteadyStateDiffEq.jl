@@ -2,7 +2,8 @@ using SteadyStateDiffEq, NonlinearSolve, OrdinaryDiffEq, Test
 using ModelingToolkit
 using ModelingToolkit: t_nounits as t, D_nounits as D
 using SCCNonlinearSolve: SCCAlg
-using SciMLBase: LinearProblem, NonlinearProblem, SCCNonlinearProblem, SteadyStateSolution
+using SciMLBase: HomotopyProblem, LinearProblem, NonlinearProblem, SCCNonlinearProblem,
+    SteadyStateSolution
 
 function coupled_scc_problem(iip, use_vector)
     f = if iip
@@ -67,11 +68,11 @@ end
     end
 end
 
-# `DynamicSS` integrates `u' = g(u)` where `g` is the concatenated block
-# residual. `b - A*u` is the residual of a linear block, so `A u = b` with a
-# positive-definite `A` gives attracting dynamics; the nonlinear block solves
-# `x^2 + y = p[1]`, `x + y^2 = p[2]` with `p` fed by the first block's trial
-# state, giving the root `(1, 2, 1, 2)` for `p = (3, 5)`.
+# `DynamicSS` solves the blocks sequentially: the `LinearProblem` block is
+# solved directly (`A u = b` gives `a = 1, b = 2`), then its solution updates the
+# nonlinear block's parameters through `explicitfuns!` to `p = (3, 5)`, and the
+# block residual `x' = 3 - x^2 - y`, `y' = 5 - x - y^2` is integrated to the
+# root `(1, 2)`.
 function dynamicss_scc_problem(iip, use_vector)
     linprob = LinearProblem([3.0 1.0; 1.0 2.0], [5.0, 5.0]; u0 = [0.8, 1.8])
     f = if iip
@@ -93,7 +94,7 @@ function dynamicss_scc_problem(iip, use_vector)
     )
 end
 
-@testset "DynamicSS integrates an SCCNonlinearProblem" begin
+@testset "DynamicSS sequentially solves an SCCNonlinearProblem" begin
     @testset "iip=$iip vector=$use_vector" for iip in (false, true),
             use_vector in (false, true)
 
@@ -102,14 +103,46 @@ end
         @test successful_retcode(sol)
         @test sol.u ≈ [1, 2, 1, 2] atol = 1.0e-8
         @test sol.prob === prob
-        @test sol.original isa SteadyStateSolution
-        @test sol.original.original isa SciMLBase.AbstractODESolution
+        # `original` is the per-block solutions: a direct linear solve and a
+        # `DynamicSS` steady-state solve.
+        @test sol.original isa Tuple{SciMLBase.LinearSolution, NonlinearSolution}
+        @test sol.original[2].original isa SteadyStateSolution
+        @test sol.original[2].original.original isa SciMLBase.AbstractODESolution
+    end
+
+    @testset "HomotopyProblem block" for iip in (false, true)
+        # The target system is `u' = 2 - u^2` at `λ = λspan[2]` (`1 - u^2` at
+        # `λspan[1]`), so integrating the wrong endpoint would give 1 instead
+        # of √2.
+        f = if iip
+            (du, u, p, λ) -> (du .= (λ * 2 + (1 - λ)) .- u .^ 2)
+        else
+            (u, p, λ) -> (λ * 2 + (1 - λ)) .- u .^ 2
+        end
+        prob = SCCNonlinearProblem(
+            (HomotopyProblem(f, [0.5]),), (Returns(nothing),)
+        )
+        sol = solve(prob, DynamicSS(Tsit5()); abstol = 1.0e-10, reltol = 1.0e-10)
+        @test successful_retcode(sol)
+        @test sol.u ≈ [sqrt(2)] atol = 1.0e-8
+    end
+
+    @testset "LinearProblem blocks are solved directly" begin
+        # `A = -1` makes `u' = b - A*u = 1 + u` repelling, but the block is
+        # solved directly rather than integrated, so it still converges.
+        prob = SCCNonlinearProblem(
+            (LinearProblem([-1.0;;], [1.0]; u0 = [0.0]),), (Returns(nothing),)
+        )
+        sol = solve(prob, DynamicSS(Tsit5(), tspan = 10.0))
+        @test successful_retcode(sol)
+        @test sol.u ≈ [-1.0]
+        @test sol.original isa Tuple{SciMLBase.LinearSolution}
     end
 
     @testset "Non-converging residual" begin
         # `u' = 1 + u` diverges, so steady-state termination never fires.
         prob = SCCNonlinearProblem(
-            (LinearProblem([-1.0;;], [1.0]; u0 = [0.0]),), (Returns(nothing),)
+            (NonlinearProblem((u, p) -> 1.0 .+ u, [0.0]),), (Returns(nothing),)
         )
         sol = solve(prob, DynamicSS(Tsit5(), tspan = 10.0))
         @test !successful_retcode(sol)
@@ -197,8 +230,12 @@ end
     @test sol.u ≈ direct.u atol = 1.0e-8
     @test sol[[a, b, x]] ≈ [1, 2, cbrt(3)] atol = 1.0e-8
     @test sol.prob === sccprob
-    @test sol.original isa SteadyStateSolution
-    @test sol.original.original isa SciMLBase.AbstractODESolution
+    # Sequential solve: the linear block is a direct solve and the nonlinear
+    # block is integrated to steady state by `DynamicSS`.
+    @test sol.original[1] isa SciMLBase.LinearSolution
+    @test sol.original[2] isa NonlinearSolution
+    @test sol.original[2].original isa SteadyStateSolution
+    @test sol.original[2].original.original isa SciMLBase.AbstractODESolution
 end
 
 @testset "DynamicSS on a SteadyStateProblem with SCC initialization" begin
