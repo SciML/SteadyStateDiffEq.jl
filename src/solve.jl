@@ -41,15 +41,15 @@ function SciMLBase.solve(
     return __build_ssrootfind_solution(prob, nlsol)
 end
 
-# `DynamicSS` on an `SCCNonlinearProblem` solves the blocks sequentially in SCC
-# order: each block's parameter cache is updated from the upstream solutions
-# through `explicitfuns!`, `LinearProblem` blocks are solved directly, and the
-# remaining blocks are integrated to steady state by `DynamicSS` on the block
+# `DynamicSS`/`SICNM` on an `SCCNonlinearProblem` solve the blocks sequentially
+# in SCC order: each block's parameter cache is updated from the upstream
+# solutions through `explicitfuns!`, `LinearProblem` blocks are solved directly,
+# and the remaining blocks are integrated to steady state on the block
 # residual. `explicitfuns!` mutate the block caches, matching the
 # `SCCNonlinearSolve` protocol; each upstream solution is stripped to a plain
 # solution so generated explicit functions can index `sols[j][k]`/`sols[j].u`.
 function SciMLBase.solve(
-        prob::SciMLBase.SCCNonlinearProblem, alg::DynamicSS,
+        prob::SciMLBase.SCCNonlinearProblem, alg::Union{DynamicSS, SICNM},
         args...; kwargs...
     )
     sols = ()
@@ -98,6 +98,24 @@ function SciMLBase.solve(
     return SciMLBase.build_solution(prob, alg, u, resid; retcode, original = sols)
 end
 
+# A `SteadyStateProblem` that records an `SCCNonlinearProblem` lowering is
+# solved block-sequentially in the lowering's ordering instead of one
+# monolithic integration. Returns `nothing` when there is no SCC lowering.
+function __solve_scc_lowering(
+        prob, alg, args...; save_idxs = nothing, kwargs...
+    )
+    lp = prob isa SteadyStateProblem ? prob.lowered_problem : nothing
+    lp === nothing && return nothing
+    lp isa SciMLBase.AbstractSciMLProblem || (lp = lp(prob))
+    lp isa SciMLBase.SCCNonlinearProblem || return nothing
+    sccsol = solve(lp, alg, args...; kwargs...)
+    save_idxs === nothing && return sccsol
+    return SciMLBase.build_solution(
+        lp, sccsol.alg, sccsol.u[save_idxs], sccsol.resid[save_idxs];
+        retcode = sccsol.retcode, original = sccsol
+    )
+end
+
 __get_tspan(u0, alg::Union{DynamicSS, SICNM}) = __get_tspan(u0, alg.tspan)
 __get_tspan(u0, tspan::Tuple) = tspan
 function __get_tspan(u0, tspan::Number)
@@ -116,24 +134,11 @@ function SciMLBase.__solve(
         save_idxs = nothing, termination_condition = NonlinearSolveBase.NormTerminationMode(infnorm),
         alias = SciMLBase.NonlinearAliasSpecifier(), kwargs...
     )
-    # A `SteadyStateProblem` that records an `SCCNonlinearProblem` lowering is
-    # solved block-sequentially in the lowering's ordering instead of one
-    # monolithic integration.
-    lp = prob isa SteadyStateProblem ? prob.lowered_problem : nothing
-    if lp !== nothing
-        lp isa SciMLBase.AbstractSciMLProblem || (lp = lp(prob))
-        if lp isa SciMLBase.SCCNonlinearProblem
-            sccsol = solve(
-                lp, alg, args...; abstol, reltol, odesolve_kwargs,
-                termination_condition, alias, kwargs...
-            )
-            save_idxs === nothing && return sccsol
-            return SciMLBase.build_solution(
-                lp, sccsol.alg, sccsol.u[save_idxs], sccsol.resid[save_idxs];
-                retcode = sccsol.retcode, original = sccsol
-            )
-        end
-    end
+    sccsol = __solve_scc_lowering(
+        prob, alg, args...; abstol, reltol, odesolve_kwargs,
+        termination_condition, alias, save_idxs, kwargs...
+    )
+    sccsol !== nothing && return sccsol
 
     tspan = __get_tspan(prob.u0, alg)
 
@@ -239,6 +244,12 @@ function SciMLBase.__solve(
         termination_condition = NonlinearSolveBase.AbsNormTerminationMode(infnorm),
         alias = SciMLBase.NonlinearAliasSpecifier(), kwargs...
     )
+    sccsol = __solve_scc_lowering(
+        prob, alg, args...; abstol, reltol, odesolve_kwargs,
+        termination_condition, alias, save_idxs, kwargs...
+    )
+    sccsol !== nothing && return sccsol
+
     prob.u0 isa AbstractVector ||
         throw(ArgumentError("SICNM currently only supports `AbstractVector` initial conditions"))
     tspan = __get_tspan(prob.u0, alg)
@@ -248,6 +259,11 @@ function SciMLBase.__solve(
 
     g = if prob isa SteadyStateProblem
         iip ? ((res, y) -> prob.f(res, y, p, t0)) : (y -> prob.f(y, p, t0))
+    elseif prob isa SciMLBase.HomotopyProblem
+        # The `λ = λspan[2]` end of the homotopy is the actual system.
+        λ1 = last(prob.λspan)
+        fnl = NonlinearSolveBase.get_raw_f(SciMLBase.unwrapped_f(prob.f.f))
+        iip ? ((res, y) -> fnl(res, y, p, λ1)) : (y -> fnl(y, p, λ1))
     elseif prob isa NonlinearProblem
         # AutoSpecialize wraps `prob.f` in FunctionWrappers compiled only for the
         # standard solver dual types, which cannot accept the SICNM JVP duals, so

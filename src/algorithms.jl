@@ -245,6 +245,17 @@ consistent initialization `z(0) = -J(y₀)⁻¹ g(y₀)`, whose linear solve is 
 [LinearSolve.jl](https://docs.sciml.ai/LinearSolve/stable/) and is configurable through
 the `linsolve` keyword.
 
+An `SCCNonlinearProblem` can also be solved directly: its blocks are solved
+sequentially in SCC order, updating each block's parameters from the upstream
+solutions through `explicitfuns!` as in the SCC solve. `LinearProblem` blocks
+are solved directly, and the remaining blocks each run their own SICNM
+continuous-Newton flow on the block residual — so convergence only requires each
+nonlinear block to be tractable for SICNM on its own, not the concatenated
+system. A `SteadyStateProblem` that records an `SCCNonlinearProblem` as its
+`lowered_problem` (for example one built by `ModelingToolkit`) takes the same
+sequential solve, and its solution is expressed on the lowered problem's state
+ordering.
+
 # Arguments
 
   - `alg`: the ODE solver algorithm used to integrate the DAE. It must support mass
