@@ -1,13 +1,101 @@
+function __build_ssrootfind_solution(prob, nlsol)
+    return SciMLBase.build_solution(
+        prob, SSRootfind(nlsol.alg), nlsol.u, nlsol.resid;
+        nlsol.retcode, nlsol.stats, nlsol.left, nlsol.right, original = nlsol
+    )
+end
+
 function SciMLBase.__solve(
         prob::SciMLBase.AbstractSteadyStateProblem, alg::SSRootfind,
         args...; kwargs...
     )
     nlprob = NonlinearProblem(prob)
-    nlsol = solve(nlprob, alg.alg, args...; kwargs...)
-    return SciMLBase.build_solution(
-        prob, SSRootfind(nlsol.alg), nlsol.u, nlsol.resid;
-        nlsol.retcode, nlsol.stats, nlsol.left, nlsol.right, original = nlsol
+    fwd = kwargs
+    if nlprob isa SciMLBase.SCCNonlinearProblem
+        # The nonlinear solve pipeline injects `alias`/`verbose` as nonlinear
+        # specifier types, which `LinearProblem` blocks in the SCC solve do not
+        # understand.
+        fwd = (; (n => v for (n, v) in pairs(kwargs) if n !== :alias && n !== :verbose)...)
+    end
+    nlsol = solve(nlprob, alg.alg, args...; fwd...)
+    # A stored `lowered_problem` (e.g. an `SCCNonlinearProblem`) solves in the
+    # lowering's own state ordering, so its solution is expressed on the
+    # lowering rather than the steady-state problem.
+    solprob = if prob isa SteadyStateProblem && prob.lowered_problem !== nothing
+        nlprob
+    else
+        prob
+    end
+    return __build_ssrootfind_solution(solprob, nlsol)
+end
+
+# An SCCNonlinearProblem has no top-level `u0`/`kwargs` fields, so it cannot go
+# through the generic AbstractNonlinearProblem solve preprocessing. Forward it
+# directly to the wrapped algorithm instead, which dispatches to the SCC solver
+# loaded downstream (SCCNonlinearSolve.jl).
+function SciMLBase.solve(
+        prob::SciMLBase.SCCNonlinearProblem, alg::SSRootfind,
+        args...; kwargs...
     )
+    nlsol = solve(prob, alg.alg, args...; kwargs...)
+    return __build_ssrootfind_solution(prob, nlsol)
+end
+
+# `DynamicSS` on an `SCCNonlinearProblem` solves the blocks sequentially in SCC
+# order: each block's parameter cache is updated from the upstream solutions
+# through `explicitfuns!`, `LinearProblem` blocks are solved directly, and the
+# remaining blocks are integrated to steady state by `DynamicSS` on the block
+# residual. `explicitfuns!` mutate the block caches, matching the
+# `SCCNonlinearSolve` protocol; each upstream solution is stripped to a plain
+# solution so generated explicit functions can index `sols[j][k]`/`sols[j].u`.
+function SciMLBase.solve(
+        prob::SciMLBase.SCCNonlinearProblem, alg::DynamicSS,
+        args...; kwargs...
+    )
+    sols = ()
+    for i in eachindex(prob.probs)
+        block = prob.probs[i]
+        SciMLBase.invoke_with_despecialized_parameters(
+            prob.explicitfuns![i], (parameter_values(block), sols)
+        )
+        _sol = if block isa LinearProblem
+            A, b = block.A, block.b
+            # `remake` recomputes `A` and `b` through a `SymbolicLinearInterface`
+            # from the cache that `explicitfun` just updated; for a plain
+            # `LinearProblem` it is an identity copy.
+            linsol = SciMLBase.solve(remake(block; A, b), nothing)
+            resid = linsol.resid === nothing ? A * linsol.u - b : linsol.resid
+            SciMLBase.build_linear_solution(
+                nothing, linsol.u, resid, nothing; retcode = linsol.retcode
+            )
+        else
+            # `HomotopyProblem` has no `solve` preprocessing support
+            # (`get_concrete_problem` is only defined for `NonlinearProblem`
+            # and `NonlinearLeastSquaresProblem`), so it goes through `__solve`
+            # directly.
+            sssol = if block isa SciMLBase.HomotopyProblem
+                SciMLBase.__solve(block, alg, args...; kwargs...)
+            else
+                SciMLBase.solve(block, alg, args...; kwargs...)
+            end
+            SciMLBase.build_solution(
+                block, nothing, sssol.u, sssol.resid;
+                retcode = sssol.retcode, original = sssol
+            )
+        end
+        sols = (sols..., _sol)
+    end
+
+    u = vcat(map(sol -> sol.u, sols)...)
+    resid = vcat(map(sol -> sol.resid, sols)...)
+    retcode = SciMLBase.ReturnCode.Success
+    for s in sols
+        if !SciMLBase.successful_retcode(s)
+            retcode = s.retcode
+            break
+        end
+    end
+    return SciMLBase.build_solution(prob, alg, u, resid; retcode, original = sols)
 end
 
 __get_tspan(u0, alg::Union{DynamicSS, SICNM}) = __get_tspan(u0, alg.tspan)
@@ -28,10 +116,37 @@ function SciMLBase.__solve(
         save_idxs = nothing, termination_condition = NonlinearSolveBase.NormTerminationMode(infnorm),
         alias = SciMLBase.NonlinearAliasSpecifier(), kwargs...
     )
+    # A `SteadyStateProblem` that records an `SCCNonlinearProblem` lowering is
+    # solved block-sequentially in the lowering's ordering instead of one
+    # monolithic integration.
+    lp = prob isa SteadyStateProblem ? prob.lowered_problem : nothing
+    if lp !== nothing
+        lp isa SciMLBase.AbstractSciMLProblem || (lp = lp(prob))
+        if lp isa SciMLBase.SCCNonlinearProblem
+            sccsol = solve(
+                lp, alg, args...; abstol, reltol, odesolve_kwargs,
+                termination_condition, alias, kwargs...
+            )
+            save_idxs === nothing && return sccsol
+            return SciMLBase.build_solution(
+                lp, sccsol.alg, sccsol.u[save_idxs], sccsol.resid[save_idxs];
+                retcode = sccsol.retcode, original = sccsol
+            )
+        end
+    end
+
     tspan = __get_tspan(prob.u0, alg)
 
     f = if prob isa SteadyStateProblem
         prob.f
+    elseif prob isa SciMLBase.HomotopyProblem
+        # The `λ = λspan[2]` end of the homotopy is the actual system.
+        λ1 = last(prob.λspan)
+        if isinplace(prob)
+            (du, u, p, t) -> prob.f(du, u, p, λ1)
+        else
+            (u, p, t) -> prob.f(u, p, λ1)
+        end
     elseif prob isa NonlinearProblem
         if isinplace(prob)
             (du, u, p, t) -> prob.f(du, u, p)

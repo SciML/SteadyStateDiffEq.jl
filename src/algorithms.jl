@@ -84,6 +84,19 @@ abstract type SteadyStateDiffEqAlgorithm <: SciMLBase.AbstractSteadyStateAlgorit
 Solve a steady-state problem by converting it to a `NonlinearProblem` and calling a
 nonlinear solver.
 
+An `SCCNonlinearProblem` can also be solved directly: it is forwarded to `alg`
+unchanged, preserving its decomposition into linear and nonlinear blocks. This
+requires the SCC solver implementation from `SCCNonlinearSolve.jl` to be loaded
+(it is a dependency of `NonlinearSolve.jl` and `ModelingToolkit.jl`); `alg` may be
+`nothing` or a nonlinear solver algorithm (wrapped in `SCCNonlinearSolve.SCCAlg`
+automatically), or an `SCCAlg` configured with separate linear and nonlinear
+block solvers.
+
+A `SteadyStateProblem` that records a `lowered_problem` (for example the SCC
+decomposition stored by `ModelingToolkit`) is solved through that lowering;
+since the lowering defines its own state ordering, the returned solution is
+expressed on the lowered problem.
+
 # Arguments
 
   - `alg`: the nonlinear solver algorithm passed to `solve`. When `alg === nothing`,
@@ -128,6 +141,17 @@ close to zero.
 `DynamicSS` internally adds a `TerminateSteadyState` callback. The `abstol` and
 `reltol` keywords passed to `solve` control the steady-state termination condition. Use
 `odesolve_kwargs` to pass separate keyword arguments to the ODE solve.
+
+An `SCCNonlinearProblem` can also be solved directly: its blocks are solved
+sequentially in SCC order, updating each block's parameters from the upstream
+solutions through `explicitfuns!` as in the SCC solve. `LinearProblem` blocks
+are solved directly, and the remaining blocks are integrated to steady state by
+`DynamicSS` on the block residual — so convergence only requires each
+nonlinear block's residual to be attracting under its own pseudo-transient
+dynamics, not a globally attracting concatenated field. A `SteadyStateProblem`
+that records an `SCCNonlinearProblem` as its `lowered_problem` (for example one
+built by `ModelingToolkit`) takes the same sequential solve, and its solution
+is expressed on the lowered problem's state ordering.
 
 # Arguments
 
