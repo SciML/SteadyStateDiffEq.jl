@@ -150,6 +150,62 @@ end
     end
 end
 
+# `SICNM` takes the same sequential route: the `LinearProblem` block is solved
+# directly and the nonlinear block runs its own continuous-Newton flow on the
+# block residual `g(x) = (3 - x^2 - y, 5 - x - y^2)`, converging to `(1, 2)`.
+@testset "SICNM sequentially solves an SCCNonlinearProblem" begin
+    @testset "iip=$iip vector=$use_vector" for iip in (false, true),
+            use_vector in (false, true)
+
+        prob = dynamicss_scc_problem(iip, use_vector)
+        sol = solve(prob, SICNM(Rodas5P()); abstol = 1.0e-10, reltol = 1.0e-10)
+        @test successful_retcode(sol)
+        @test sol.u ≈ [1, 2, 1, 2] atol = 1.0e-8
+        @test sol.prob === prob
+        @test sol.original isa Tuple{SciMLBase.LinearSolution, NonlinearSolution}
+        @test sol.original[2].original isa SteadyStateSolution
+        @test sol.original[2].original.original isa SciMLBase.AbstractODESolution
+    end
+
+    @testset "HomotopyProblem block" for iip in (false, true)
+        # The target system is `u^2 = 2` at `λ = λspan[2]` (`u^2 = 1` at
+        # `λspan[1]`), so evaluating the wrong endpoint would give 1 instead
+        # of √2.
+        f = if iip
+            (du, u, p, λ) -> (du .= (λ * 2 + (1 - λ)) .- u .^ 2)
+        else
+            (u, p, λ) -> (λ * 2 + (1 - λ)) .- u .^ 2
+        end
+        prob = SCCNonlinearProblem(
+            (HomotopyProblem(f, [0.5]),), (Returns(nothing),)
+        )
+        sol = solve(prob, SICNM(Rodas5P()); abstol = 1.0e-10, reltol = 1.0e-10)
+        @test successful_retcode(sol)
+        @test sol.u ≈ [sqrt(2)] atol = 1.0e-8
+    end
+
+    @testset "LinearProblem blocks are solved directly" begin
+        prob = SCCNonlinearProblem(
+            (LinearProblem([-1.0;;], [1.0]; u0 = [0.0]),), (Returns(nothing),)
+        )
+        sol = solve(prob, SICNM(Rodas5P()))
+        @test successful_retcode(sol)
+        @test sol.u ≈ [-1.0]
+        @test sol.original isa Tuple{SciMLBase.LinearSolution}
+    end
+
+    @testset "Unsolvable residual" begin
+        # `u^2 + 1 = 0` has no real root: the Newton flow is driven into the
+        # singularity at `u = 0`, so the DAE solve cannot reach steady state.
+        prob = SCCNonlinearProblem(
+            (NonlinearProblem((u, p) -> u .^ 2 .+ 1, [1.0]),), (Returns(nothing),)
+        )
+        sol = solve(prob, SICNM(Rodas5P()))
+        @test !successful_retcode(sol)
+        @test sol.prob === prob
+    end
+end
+
 # A `SteadyStateProblem` recording an `SCCNonlinearProblem` lowering is solved
 # through it: `DynamicSS` runs the sequential block solve and `SSRootfind`
 # forwards the lowering to the nonlinear solver. The solution is expressed on
@@ -162,6 +218,7 @@ end
             builder in (false, true),
             alg in (
                 DynamicSS(Tsit5()),
+                SICNM(Rodas5P()),
                 SSRootfind(NewtonRaphson()),
                 SSRootfind(SCCAlg(; nlalg = NewtonRaphson())),
             )
@@ -322,6 +379,23 @@ end
     prob = SteadyStateProblem(sys, [a => 0.8, b => 1.8, x => 0.8])
 
     sol = solve(prob, DynamicSS(); abstol = 1.0e-10, reltol = 1.0e-10)
+    @test successful_retcode(sol)
+    @test sol[[a, b, x]] ≈ [1, 2, cbrt(3)] atol = 1.0e-8
+    @test sol.prob isa SCCNonlinearProblem
+    @test sol.original isa Tuple{SciMLBase.LinearSolution, NonlinearSolution}
+end
+
+@testset "SICNM on a SteadyStateProblem with an SCC lowering" begin
+    # Scalar nonlinear block `3 - x^3` has a unique real root `∛3` that is
+    # attracting under SICNM's continuous-Newton flow.
+    @variables a(t) b(t) x(t) [irreducible = true]
+    @named model = System(
+        [D(a) ~ 5 - 3a - b, D(b) ~ 5 - a - 2b, D(x) ~ a + b - x^3], t
+    )
+    sys = mtkcompile(model)
+    prob = SteadyStateProblem(sys, [a => 0.8, b => 1.8, x => 0.8])
+
+    sol = solve(prob, SICNM(Rodas5P()); abstol = 1.0e-10, reltol = 1.0e-10)
     @test successful_retcode(sol)
     @test sol[[a, b, x]] ≈ [1, 2, cbrt(3)] atol = 1.0e-8
     @test sol.prob isa SCCNonlinearProblem
