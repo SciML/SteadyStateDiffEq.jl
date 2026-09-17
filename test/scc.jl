@@ -298,16 +298,16 @@ end
     states = [a, b, x, y, c, d]
     expected = [1, 2, 1, 2, 3, 4]
 
+    @test prob.lowered_problem !== nothing
+
+    # The `SSRootfind` solve happens on the `SCCNonlinearProblem` lowering, and
+    # `sol` is expressed on it.
     sol = solve(
         prob, SSRootfind(NewtonRaphson()); abstol = 1.0e-12, reltol = 1.0e-12
     )
     @test successful_retcode(sol)
     @test sol[states] ≈ expected atol = 1.0e-9
-    # With a stored SCC lowering the solve happens on the `SCCNonlinearProblem`
-    # and `sol` is expressed on it; older MTK leaves `lowered_problem` empty.
-    if prob.lowered_problem !== nothing
-        @test sol.prob isa SCCNonlinearProblem
-    end
+    @test sol.prob isa SCCNonlinearProblem
 end
 
 @testset "DynamicSS on a SteadyStateProblem with an SCC lowering" begin
@@ -324,8 +324,6 @@ end
     sol = solve(prob, DynamicSS(); abstol = 1.0e-10, reltol = 1.0e-10)
     @test successful_retcode(sol)
     @test sol[[a, b, x]] ≈ [1, 2, cbrt(3)] atol = 1.0e-8
-    if prob.lowered_problem !== nothing
-        @test sol.prob isa SCCNonlinearProblem
-        @test sol.original isa Tuple{SciMLBase.LinearSolution, NonlinearSolution}
-    end
+    @test sol.prob isa SCCNonlinearProblem
+    @test sol.original isa Tuple{SciMLBase.LinearSolution, NonlinearSolution}
 end
