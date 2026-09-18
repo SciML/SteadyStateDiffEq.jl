@@ -235,6 +235,40 @@ end
         @test sol.original !== nothing
     end
 
+    # Bare and `AbstractNonlinearAlgorithm` solves have no `__solve` dispatch of
+    # their own here; they land on the generic nonlinear-solve path, which
+    # converts back through `prob.u0` — absent on `SCCNonlinearProblem`. `solve`
+    # forwards the lowering to its own `solve` dispatch (the SCC solver)
+    # instead.
+    @testset "bare and nonlinear-alg solve" for iip in (false, true),
+            builder in (false, true),
+            alg in (nothing, NewtonRaphson())
+
+        sccprob = dynamicss_scc_problem(iip, false)
+        lowered = builder ? (prob -> sccprob) : sccprob
+        prob = SteadyStateProblem(
+            iip ? f_iip : f_oop, [0.0, 0.0]; lowered_problem = lowered
+        )
+        sol = alg === nothing ? solve(prob) : solve(prob, alg)
+        @test successful_retcode(sol)
+        @test sol.u ≈ [1, 2, 1, 2] atol = 1.0e-9
+    end
+
+    # Non-SCC lowerings and problems without a lowering keep the upstream
+    # nonlinear-solve path.
+    @testset "non-SCC lowering" begin
+        nlprob = NonlinearProblem((u, p) -> [u[1]^2 - 4], [1.0])
+        prob = SteadyStateProblem(f_oop, [0.0]; lowered_problem = nlprob)
+        sol = solve(prob)
+        @test successful_retcode(sol)
+        @test sol.u ≈ [2.0] atol = 1.0e-9
+
+        plain = SteadyStateProblem(f_oop, [0.0])
+        psol = solve(plain)
+        @test successful_retcode(psol)
+        @test psol.u ≈ [1.0] atol = 1.0e-9
+    end
+
     # `remake`d values reach a callable lowering through the materialized
     # problem, so the block solve sees the new operating point.
     sccprob = dynamicss_scc_problem(false, false)
