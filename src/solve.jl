@@ -116,6 +116,39 @@ function __solve_scc_lowering(
     )
 end
 
+# A `SteadyStateProblem`'s stored SCC lowering materializes through
+# `SciMLBase.NonlinearProblem(prob)` during `solve`. When it is an
+# `SCCNonlinearProblem`, the generic nonlinear-solve path re-dispatches
+# `__solve` on it and the fallbacks try to convert it back via `prob.u0` — a
+# field it does not have — so the lowering goes through its own `solve`
+# dispatch instead, which routes bare and `AbstractNonlinearAlgorithm` solves
+# to the SCC solver (`SCCNonlinearSolve.jl`, loaded downstream). Algorithms
+# that do not lower to a nonlinear solve (`DynamicSS`, ODE algorithms) keep
+# their own `__solve` dispatch; non-SCC lowerings keep the upstream path
+# verbatim via `invoke`.
+function SciMLBase.solve(prob::SteadyStateProblem, args...; kwargs...)
+    alg = isempty(args) ? nothing : first(args)
+    alg === nothing && (alg = get(kwargs, :alg, nothing))
+    alg === nothing && prob.kwargs !== nothing &&
+        (alg = get(prob.kwargs, :alg, nothing))
+    if alg !== nothing && !(alg isa SciMLBase.AbstractNonlinearAlgorithm)
+        return invoke(
+            solve, Tuple{SciMLBase.AbstractNonlinearProblem, Vararg{Any}},
+            prob, args...; kwargs...
+        )
+    end
+    # Concretize like `NonlinearSolveBase.solve_up` (evaluates `u0(p, Inf)`-style
+    # `u0`s, promotes integer `u0`s, applies `u0`/`p` solve kwargs) so a
+    # callable `lowered_problem` sees the updated operating point.
+    _prob = NonlinearSolveBase.get_concrete_problem(prob; kwargs...)
+    nlprob = NonlinearProblem(_prob)
+    nlprob isa SciMLBase.SCCNonlinearProblem && return solve(nlprob, args...; kwargs...)
+    return invoke(
+        solve, Tuple{SciMLBase.AbstractNonlinearProblem, Vararg{Any}},
+        _prob, args...; kwargs...
+    )
+end
+
 __get_tspan(u0, alg::Union{DynamicSS, SICNM}) = __get_tspan(u0, alg.tspan)
 __get_tspan(u0, tspan::Tuple) = tspan
 function __get_tspan(u0, tspan::Number)
