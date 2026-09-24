@@ -438,15 +438,12 @@ end
 
 # `init` had no `DynamicSS`/`SICNM`-specific dispatch for `AbstractSteadyStateProblem`,
 # so it fell through to NonlinearSolve's "no algorithm" default-conversion path,
-# which calls `SciMLBase.NonlinearProblem(prob)` and recurses on the result. For a
-# plain `SteadyStateProblem` that materializes to an actual `NonlinearProblem`, so
-# the recursion terminates; for one whose `lowered_problem` is an
-# `SCCNonlinearProblem`, `NonlinearProblem` returns the input unchanged and the
-# recursion never terminates (a `FieldError` on unpatched `SciMLBase`, a stack
-# overflow once `SciMLBase.NonlinearProblem(::SCCNonlinearProblem)` is an
-# identity). `init` on a plain problem returns a live ODE integrator; on an SCC
-# lowering there is no single integrator, so it eagerly solves and returns the
-# finished solution (see `SciMLBase.__init` in src/solve.jl).
+# which cannot handle an `SCCNonlinearProblem` lowering (`SciMLBase.NonlinearProblem`
+# raises an `ArgumentError` for it). The `__init` methods below are more specific
+# than that default path, so it is never reached: on a plain problem `init` returns
+# a live ODE integrator, and on an SCC lowering — which has no single integrator to
+# hand back — it eagerly solves and returns the finished solution (see
+# `SciMLBase.__init` in src/solve.jl).
 @testset "init on DynamicSS/SICNM does not fall through to NonlinearSolve's default" begin
     @testset "plain SteadyStateProblem returns a live integrator" for alg in (
             DynamicSS(Tsit5()), SICNM(Rodas5P()),
