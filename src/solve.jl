@@ -213,6 +213,7 @@ function SciMLBase.solve(prob::SteadyStateProblem, args...; kwargs...)
         solve, Tuple{SciMLBase.AbstractNonlinearProblem, Vararg{Any}},
         _prob, args...; kwargs...
     )
+    kwargs = (; _prob.kwargs..., kwargs...)
     # `u0`/`p` are in `prob`'s coordinates and already applied to the lowering.
     fwd = __without(kwargs, :u0, :p, :save_idxs)
     save_idxs = get(kwargs, :save_idxs, nothing)

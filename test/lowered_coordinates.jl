@@ -66,6 +66,12 @@ end
     # A `u0` override is given in `prob`'s coordinates.
     sol = solve(prob, NewtonRaphson(); u0 = [1.4, 2.8])
     @test sol.u ≈ [expected[s] for s in unknowns(sys)] atol = 1.0e-10
+
+    # Solver options stored on the problem reach the lowering's solve.
+    capped = SteadyStateProblem(sys, [u => 2.9, v => 1.6]; maxiters = 1)
+    @testset "stored kwargs, alg=$alg" for alg in (NewtonRaphson(), SSRootfind(NewtonRaphson()))
+        @test solve(capped, alg).retcode == ReturnCode.MaxIters
+    end
 end
 
 @testset "SCC lowering" begin
@@ -89,5 +95,12 @@ end
         xidx = findfirst(isequal(x), unknowns(sys))
         ssol = solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10, save_idxs = [xidx])
         @test ssol.u ≈ [cbrt(3)] atol = 1.0e-8
+    end
+
+    capped = SteadyStateProblem(sys, [a => 0.8, b => 1.8, x => 0.8]; maxiters = 1)
+    @testset "stored kwargs, alg=$alg" for alg in (
+            NewtonRaphson(), SSRootfind(NewtonRaphson()), DynamicSS(Tsit5()),
+        )
+        @test !successful_retcode(solve(capped, alg))
     end
 end
