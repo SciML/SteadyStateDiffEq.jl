@@ -9,24 +9,96 @@ function SciMLBase.__solve(
         prob::SciMLBase.AbstractSteadyStateProblem, alg::SSRootfind,
         args...; kwargs...
     )
-    nlprob = NonlinearProblem(prob)
+    lp = __lowering(prob)
+    if lp === nothing
+        nlsol = solve(NonlinearProblem(prob), alg.alg, args...; kwargs...)
+        return __build_ssrootfind_solution(prob, nlsol)
+    end
     fwd = kwargs
-    if nlprob isa SciMLBase.SCCNonlinearProblem
+    if lp isa SciMLBase.SCCNonlinearProblem
         # The nonlinear solve pipeline injects `alias`/`verbose` as nonlinear
         # specifier types, which `LinearProblem` blocks in the SCC solve do not
         # understand.
-        fwd = (; (n => v for (n, v) in pairs(kwargs) if n !== :alias && n !== :verbose)...)
+        fwd = __without(kwargs, :alias, :verbose)
     end
-    nlsol = solve(nlprob, alg.alg, args...; fwd...)
-    # A stored `lowered_problem` (e.g. an `SCCNonlinearProblem`) solves in the
-    # lowering's own state ordering, so its solution is expressed on the
-    # lowering rather than the steady-state problem.
-    solprob = if prob isa SteadyStateProblem && prob.lowered_problem !== nothing
-        nlprob
+    save_idxs = get(kwargs, :save_idxs, nothing)
+    fwd = __without(fwd, :save_idxs)
+    return __solve_lowering(prob, lp, alg; save_idxs) do lp
+        __build_ssrootfind_solution(lp, solve(lp, alg.alg, args...; fwd...))
+    end
+end
+
+function __without(kwargs, names::Symbol...)
+    return (; (n => v for (n, v) in pairs(kwargs) if !(n in names))...)
+end
+
+# The problem that `prob`'s stored `lowered_problem` materializes to against its
+# current `u0`/`p`, or `nothing` when it records no lowering.
+function __lowering(prob)
+    prob isa SteadyStateProblem && prob.lowered_problem !== nothing || return nothing
+    return NonlinearProblem(prob)
+end
+
+# A getter evaluating `prob`'s unknowns, in `prob`'s order, on the lowering `lp`
+# or its solution. It is built once per lowering: the lowering may reorder the
+# unknowns or eliminate all of them into observed equations. Returns `nothing`
+# when `prob` has no symbolic unknowns that `lp` can resolve, in which case
+# there is no map back to `prob`'s coordinates.
+function __original_state_getter(prob, lp)
+    syms = variable_symbols(prob)
+    u0 = state_values(prob)
+    (isempty(syms) || u0 === nothing || length(syms) != length(u0)) && return nothing
+    all(s -> is_variable(lp, s) || is_observed(lp, s), syms) || return nothing
+    return getsym(lp, syms)
+end
+
+function __steady_state_residual(prob, u)
+    isinplace(prob) || return prob.f(u, prob.p, Inf)
+    du = similar(u)
+    prob.f(du, u, prob.p, Inf)
+    return du
+end
+
+function __has_empty_state(lp)
+    u = state_values(lp)
+    return u isa AbstractArray && isempty(u)
+end
+
+# Solves `prob` through its lowering `lp` with `solve_lowering(lp)` and expresses
+# the result as a solution of `prob`: `u` holds `prob`'s unknowns in `prob`'s
+# order, `resid` is `prob`'s residual there, and the lowering's solution is kept
+# in `original`. A lowering without unknowns (every equation eliminated into an
+# observed one) has nothing to solve, so its observed values are read directly.
+function __solve_lowering(solve_lowering::F, prob, lp, alg; save_idxs = nothing) where {F}
+    getter = __original_state_getter(prob, lp)
+    if getter === nothing
+        # No map back to `prob`'s unknowns; the solution stays on the lowering.
+        lsol = solve_lowering(lp)
+        save_idxs === nothing && return lsol
+        return SciMLBase.build_solution(
+            lp, lsol.alg, lsol.u[save_idxs], lsol.resid[save_idxs];
+            retcode = lsol.retcode, original = lsol
+        )
+    end
+    if __has_empty_state(lp)
+        lsol = nothing
+        vals = getter(lp)
+        retcode = ReturnCode.Success
+        stats = nothing
     else
-        prob
+        lsol = solve_lowering(lp)
+        vals = getter(lsol)
+        retcode = lsol.retcode
+        stats = lsol.stats
+        alg = lsol.alg
     end
-    return __build_ssrootfind_solution(solprob, nlsol)
+    u = copyto!(similar(state_values(prob), eltype(vals)), vals)
+    resid = __steady_state_residual(prob, u)
+    if save_idxs !== nothing
+        u = u[save_idxs]
+        resid = resid[save_idxs]
+    end
+    return SciMLBase.build_solution(prob, alg, u, resid; retcode, stats, original = lsol)
 end
 
 # An SCCNonlinearProblem has no top-level `u0`/`kwargs` fields, so it cannot go
@@ -99,33 +171,28 @@ function SciMLBase.solve(
 end
 
 # A `SteadyStateProblem` that records an `SCCNonlinearProblem` lowering is
-# solved block-sequentially in the lowering's ordering instead of one
-# monolithic integration. Returns `nothing` when there is no SCC lowering.
+# solved block-sequentially on the lowering instead of one monolithic
+# integration. Returns `nothing` when there is no SCC lowering.
 function __solve_scc_lowering(
         prob, alg, args...; save_idxs = nothing, kwargs...
     )
-    lp = prob isa SteadyStateProblem ? prob.lowered_problem : nothing
-    lp === nothing && return nothing
-    lp isa SciMLBase.AbstractSciMLProblem || (lp = lp(prob))
+    lp = __lowering(prob)
     lp isa SciMLBase.SCCNonlinearProblem || return nothing
-    sccsol = solve(lp, alg, args...; kwargs...)
-    save_idxs === nothing && return sccsol
-    return SciMLBase.build_solution(
-        lp, sccsol.alg, sccsol.u[save_idxs], sccsol.resid[save_idxs];
-        retcode = sccsol.retcode, original = sccsol
-    )
+    return __solve_lowering(prob, lp, alg; save_idxs) do lp
+        solve(lp, alg, args...; kwargs...)
+    end
 end
 
-# A `SteadyStateProblem`'s stored SCC lowering materializes through
-# `SciMLBase.NonlinearProblem(prob)` during `solve`. When it is an
-# `SCCNonlinearProblem`, the generic nonlinear-solve path re-dispatches
-# `__solve` on it and the fallbacks try to convert it back via `prob.u0` — a
-# field it does not have — so the lowering goes through its own `solve`
-# dispatch instead, which routes bare and `AbstractNonlinearAlgorithm` solves
-# to the SCC solver (`SCCNonlinearSolve.jl`, loaded downstream). Algorithms
-# that do not lower to a nonlinear solve (`DynamicSS`, ODE algorithms) keep
-# their own `__solve` dispatch; non-SCC lowerings keep the upstream path
-# verbatim via `invoke`.
+# A `SteadyStateProblem`'s stored lowering materializes through
+# `SciMLBase.NonlinearProblem(prob)` during `solve`. The generic nonlinear-solve
+# path would solve it and return the lowering's solution, and for an
+# `SCCNonlinearProblem` its fallbacks try to convert it back via `prob.u0` — a
+# field it does not have. So bare and `AbstractNonlinearAlgorithm` solves go
+# through the lowering's own `solve` dispatch (the SCC solver,
+# `SCCNonlinearSolve.jl`, for an `SCCNonlinearProblem`) and the result is mapped
+# back onto `prob`. Algorithms that do not lower to a nonlinear solve
+# (`DynamicSS`, ODE algorithms) keep their own `__solve` dispatch; problems
+# without a lowering keep the upstream path verbatim via `invoke`.
 function SciMLBase.solve(prob::SteadyStateProblem, args...; kwargs...)
     alg = isempty(args) ? nothing : first(args)
     alg === nothing && (alg = get(kwargs, :alg, nothing))
@@ -141,12 +208,17 @@ function SciMLBase.solve(prob::SteadyStateProblem, args...; kwargs...)
     # `u0`s, promotes integer `u0`s, applies `u0`/`p` solve kwargs) so a
     # callable `lowered_problem` sees the updated operating point.
     _prob = NonlinearSolveBase.get_concrete_problem(prob; kwargs...)
-    nlprob = NonlinearProblem(_prob)
-    nlprob isa SciMLBase.SCCNonlinearProblem && return solve(nlprob, args...; kwargs...)
-    return invoke(
+    lp = __lowering(_prob)
+    lp === nothing && return invoke(
         solve, Tuple{SciMLBase.AbstractNonlinearProblem, Vararg{Any}},
         _prob, args...; kwargs...
     )
+    # `u0`/`p` are in `prob`'s coordinates and already applied to the lowering.
+    fwd = __without(kwargs, :u0, :p, :save_idxs)
+    save_idxs = get(kwargs, :save_idxs, nothing)
+    return __solve_lowering(_prob, lp, alg; save_idxs) do lp
+        solve(lp, args...; fwd...)
+    end
 end
 
 __get_tspan(u0, alg::Union{DynamicSS, SICNM}) = __get_tspan(u0, alg.tspan)

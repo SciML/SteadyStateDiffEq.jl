@@ -208,9 +208,9 @@ end
 
 # A `SteadyStateProblem` recording an `SCCNonlinearProblem` lowering is solved
 # through it: `DynamicSS` runs the sequential block solve and `SSRootfind`
-# forwards the lowering to the nonlinear solver. The solution is expressed on
-# the lowering (whose ordering need not match `prob.u0`), so `sol.prob` is the
-# `SCCNonlinearProblem`.
+# forwards the lowering to the nonlinear solver. These problems have no symbolic
+# unknowns to map the lowering's solution back onto `prob.u0`, so the solution
+# stays on the lowering and `sol.prob` is the `SCCNonlinearProblem`.
 @testset "SteadyStateProblem with an SCC lowering" begin
     f_iip(du, u, p, t) = (du .= 1 .- u)
     f_oop(u, p, t) = 1 .- u
@@ -392,13 +392,15 @@ end
     @test prob.lowered_problem !== nothing
 
     # The `SSRootfind` solve happens on the `SCCNonlinearProblem` lowering, and
-    # `sol` is expressed on it.
+    # `sol` is mapped back onto `prob`.
     sol = solve(
         prob, SSRootfind(NewtonRaphson()); abstol = 1.0e-12, reltol = 1.0e-12
     )
     @test successful_retcode(sol)
     @test sol[states] ≈ expected atol = 1.0e-9
-    @test sol.prob isa SCCNonlinearProblem
+    @test sol.prob isa SteadyStateProblem
+    @test sol.u ≈ sol[unknowns(sys)] atol = 1.0e-12
+    @test sol.original.prob isa SCCNonlinearProblem
 end
 
 @testset "DynamicSS on a SteadyStateProblem with an SCC lowering" begin
@@ -415,8 +417,10 @@ end
     sol = solve(prob, DynamicSS(); abstol = 1.0e-10, reltol = 1.0e-10)
     @test successful_retcode(sol)
     @test sol[[a, b, x]] ≈ [1, 2, cbrt(3)] atol = 1.0e-8
-    @test sol.prob isa SCCNonlinearProblem
-    @test sol.original isa Tuple{SciMLBase.LinearSolution, NonlinearSolution}
+    @test sol.prob isa SteadyStateProblem
+    @test sol.u ≈ sol[unknowns(sys)] atol = 1.0e-12
+    @test sol.original.prob isa SCCNonlinearProblem
+    @test sol.original.original isa Tuple{SciMLBase.LinearSolution, NonlinearSolution}
 end
 
 @testset "SICNM on a SteadyStateProblem with an SCC lowering" begin
@@ -432,6 +436,8 @@ end
     sol = solve(prob, SICNM(Rodas5P()); abstol = 1.0e-10, reltol = 1.0e-10)
     @test successful_retcode(sol)
     @test sol[[a, b, x]] ≈ [1, 2, cbrt(3)] atol = 1.0e-8
-    @test sol.prob isa SCCNonlinearProblem
-    @test sol.original isa Tuple{SciMLBase.LinearSolution, NonlinearSolution}
+    @test sol.prob isa SteadyStateProblem
+    @test sol.u ≈ sol[unknowns(sys)] atol = 1.0e-12
+    @test sol.original.prob isa SCCNonlinearProblem
+    @test sol.original.original isa Tuple{SciMLBase.LinearSolution, NonlinearSolution}
 end
