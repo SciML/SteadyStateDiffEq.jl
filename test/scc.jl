@@ -391,14 +391,48 @@ end
 
     @test prob.lowered_problem !== nothing
 
-    # The `SSRootfind` solve happens on the `SCCNonlinearProblem` lowering, and
-    # `sol` is expressed on it.
+    # The solve uses the SCC lowering and returns values in the steady-state
+    # problem's state order.
     sol = solve(
         prob, SSRootfind(NewtonRaphson()); abstol = 1.0e-12, reltol = 1.0e-12
     )
     @test successful_retcode(sol)
     @test sol[states] ≈ expected atol = 1.0e-9
-    @test sol.prob isa SCCNonlinearProblem
+    @test sol.prob isa SteadyStateProblem
+end
+
+@testset "SteadyStateProblem SCC solutions use the original state order" begin
+    @parameters a = 1.0 b = 2.0
+    @variables x(t) = 1.0 y(t) = 1.0 z(t) = 1.0
+    @parameters α = 1.5 β = 1.0 γ = 3.0 δ = 1.0
+    @variables u(t) = 1.0 v(t) = 1.0
+    lv = mtkcompile(
+        System([D(u) ~ α * u - β * u * v, D(v) ~ -γ * v + δ * u * v], t; name = :lv)
+    )
+    problems = (
+        (
+            mtkcompile(
+                System(
+                    [D(x) ~ a - x, D(y) ~ x - b * y, D(z) ~ y - z], t;
+                    name = :chain
+                )
+            ),
+            [x => 0.1, y => 0.2, z => 0.3],
+            [x, y, z],
+        ),
+        (lv, [u => 2.9, v => 1.6], [u, v]),
+    )
+
+    for (sys, op, states) in problems
+        prob = SteadyStateProblem(sys, op)
+        sol = solve(prob, NewtonRaphson())
+        reference = solve(remake(prob; lowered_problem = nothing), NewtonRaphson())
+
+        @test successful_retcode(sol)
+        @test sol.prob isa SteadyStateProblem
+        @test sol.u ≈ reference.u
+        @test sol[states] ≈ reference[states]
+    end
 end
 
 @testset "DynamicSS on a SteadyStateProblem with an SCC lowering" begin
@@ -415,7 +449,7 @@ end
     sol = solve(prob, DynamicSS(); abstol = 1.0e-10, reltol = 1.0e-10)
     @test successful_retcode(sol)
     @test sol[[a, b, x]] ≈ [1, 2, cbrt(3)] atol = 1.0e-8
-    @test sol.prob isa SCCNonlinearProblem
+    @test sol.prob isa SteadyStateProblem
     @test sol.original isa Tuple{SciMLBase.LinearSolution, NonlinearSolution}
 end
 
@@ -432,6 +466,6 @@ end
     sol = solve(prob, SICNM(Rodas5P()); abstol = 1.0e-10, reltol = 1.0e-10)
     @test successful_retcode(sol)
     @test sol[[a, b, x]] ≈ [1, 2, cbrt(3)] atol = 1.0e-8
-    @test sol.prob isa SCCNonlinearProblem
+    @test sol.prob isa SteadyStateProblem
     @test sol.original isa Tuple{SciMLBase.LinearSolution, NonlinearSolution}
 end

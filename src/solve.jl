@@ -5,6 +5,25 @@ function __build_ssrootfind_solution(prob, nlsol)
     )
 end
 
+function __restore_scc_steady_state_solution(
+        prob, sol; save_idxs = nothing, alg = sol.alg, original = sol
+    )
+    prob isa SteadyStateProblem || return nothing
+    prob.lowered_problem === nothing && return nothing
+    hasproperty(prob.f, :sys) || return nothing
+
+    states = variable_symbols(prob)
+    length(states) == length(prob.u0) || return nothing
+    u = sol[states]
+    if save_idxs !== nothing
+        u = u[save_idxs]
+    end
+    return SciMLBase.build_solution(
+        prob, alg, u, sol.resid;
+        retcode = sol.retcode, stats = sol.stats, original
+    )
+end
+
 function SciMLBase.__solve(
         prob::SciMLBase.AbstractSteadyStateProblem, alg::SSRootfind,
         args...; kwargs...
@@ -18,9 +37,12 @@ function SciMLBase.__solve(
         fwd = (; (n => v for (n, v) in pairs(kwargs) if n !== :alias && n !== :verbose)...)
     end
     nlsol = solve(nlprob, alg.alg, args...; fwd...)
-    # A stored `lowered_problem` (e.g. an `SCCNonlinearProblem`) solves in the
-    # lowering's own state ordering, so its solution is expressed on the
-    # lowering rather than the steady-state problem.
+    restored = __restore_scc_steady_state_solution(
+        prob, nlsol; alg = SSRootfind(nlsol.alg)
+    )
+    restored !== nothing && return restored
+    # The fallback keeps the lowering as the solution problem when it has no
+    # symbolic map back to the original state variables.
     solprob = if prob isa SteadyStateProblem && prob.lowered_problem !== nothing
         nlprob
     else
@@ -109,6 +131,10 @@ function __solve_scc_lowering(
     lp isa SciMLBase.AbstractSciMLProblem || (lp = lp(prob))
     lp isa SciMLBase.SCCNonlinearProblem || return nothing
     sccsol = solve(lp, alg, args...; kwargs...)
+    restored = __restore_scc_steady_state_solution(
+        prob, sccsol; save_idxs, original = sccsol.original
+    )
+    restored !== nothing && return restored
     save_idxs === nothing && return sccsol
     return SciMLBase.build_solution(
         lp, sccsol.alg, sccsol.u[save_idxs], sccsol.resid[save_idxs];
@@ -142,11 +168,16 @@ function SciMLBase.solve(prob::SteadyStateProblem, args...; kwargs...)
     # callable `lowered_problem` sees the updated operating point.
     _prob = NonlinearSolveBase.get_concrete_problem(prob; kwargs...)
     nlprob = NonlinearProblem(_prob)
-    nlprob isa SciMLBase.SCCNonlinearProblem && return solve(nlprob, args...; kwargs...)
-    return invoke(
-        solve, Tuple{SciMLBase.AbstractNonlinearProblem, Vararg{Any}},
-        _prob, args...; kwargs...
-    )
+    sol = if nlprob isa SciMLBase.SCCNonlinearProblem
+        solve(nlprob, args...; kwargs...)
+    else
+        invoke(
+            solve, Tuple{SciMLBase.AbstractNonlinearProblem, Vararg{Any}},
+            _prob, args...; kwargs...
+        )
+    end
+    restored = __restore_scc_steady_state_solution(_prob, sol)
+    return restored === nothing ? sol : restored
 end
 
 __get_tspan(u0, alg::Union{DynamicSS, SICNM}) = __get_tspan(u0, alg.tspan)
