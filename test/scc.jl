@@ -435,3 +435,54 @@ end
     @test sol.prob isa SCCNonlinearProblem
     @test sol.original isa Tuple{SciMLBase.LinearSolution, NonlinearSolution}
 end
+
+# `init` had no `DynamicSS`/`SICNM`-specific dispatch for `AbstractSteadyStateProblem`,
+# so it fell through to NonlinearSolve's "no algorithm" default-conversion path,
+# which cannot handle an `SCCNonlinearProblem` lowering (`SciMLBase.NonlinearProblem`
+# raises an `ArgumentError` for it). The `__init` methods below are more specific
+# than that default path, so it is never reached: on a plain problem `init` returns
+# a live ODE integrator, and on an SCC lowering — which has no single integrator to
+# hand back — it eagerly solves and returns the finished solution (see
+# `SciMLBase.__init` in src/solve.jl).
+@testset "init on DynamicSS/SICNM does not fall through to NonlinearSolve's default" begin
+    @testset "plain SteadyStateProblem returns a live integrator" for alg in (
+            DynamicSS(Tsit5()), SICNM(Rodas5P()),
+        )
+        prob = SteadyStateProblem((u, p, t) -> 1 .- u, [0.0])
+        integ = init(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        sol = solve!(integ)
+        @test successful_retcode(sol)
+        # `SICNM`'s integrator carries the extended DAE state `[y; z]`, so only
+        # the first `length(prob.u0)` components are the original residual state.
+        @test sol.u[end][1:1] ≈ [1.0] atol = 1.0e-6
+    end
+
+    @testset "manually-built SCC lowering, alg=$alg" for alg in (
+            DynamicSS(Tsit5()), SICNM(Rodas5P()),
+        )
+        sccprob = dynamicss_scc_problem(false, false)
+        prob = SteadyStateProblem(
+            (u, p, t) -> 1 .- u, [0.0, 0.0]; lowered_problem = sccprob
+        )
+        sol = init(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        @test successful_retcode(sol)
+        @test sol.u ≈ [1, 2, 1, 2] atol = 1.0e-8
+        @test sol.prob === sccprob
+    end
+
+    @testset "ModelingToolkit SCC decomposition, alg=$(nameof(typeof(alg)))" for alg in (
+            DynamicSS(Tsit5()), SICNM(Rodas5P()),
+        )
+        @variables a(t) b(t) x(t) [irreducible = true]
+        @named model = System(
+            [D(a) ~ 5 - 3a - b, D(b) ~ 5 - a - 2b, D(x) ~ a + b - x^3], t
+        )
+        sys = mtkcompile(model)
+        prob = SteadyStateProblem(sys, [a => 0.8, b => 1.8, x => 0.8])
+
+        sol = init(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        @test successful_retcode(sol)
+        @test sol[[a, b, x]] ≈ [1, 2, cbrt(3)] atol = 1.0e-8
+        @test sol.prob isa SCCNonlinearProblem
+    end
+end

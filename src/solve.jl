@@ -161,18 +161,15 @@ function __without_verbose(kwargs)
     return (; (name => value for (name, value) in pairs(kwargs) if name !== :verbose)...)
 end
 
-function SciMLBase.__solve(
-        prob::SciMLBase.AbstractSteadyStateProblem, alg::DynamicSS,
-        args...; abstol = 1.0e-8, reltol = 1.0e-6, odesolve_kwargs = (;),
-        save_idxs = nothing, termination_condition = NonlinearSolveBase.NormTerminationMode(infnorm),
-        alias = SciMLBase.NonlinearAliasSpecifier(), kwargs...
+# Shared `DynamicSS` setup for `__solve` and `__init`: builds the ODE problem that
+# integrates `prob`'s residual to steady state, along with the termination
+# callback that stops the integration (and, for `__solve`, reports convergence).
+# Returns `nothing` for an SCC lowering, which has no single ODE trajectory to
+# build — callers fall back to `__solve_scc_lowering` for that case instead.
+function __dynamicss_ode_setup(
+        prob::SciMLBase.AbstractSteadyStateProblem, alg::DynamicSS;
+        abstol, reltol, odesolve_kwargs, termination_condition, alias, kwargs...
     )
-    sccsol = __solve_scc_lowering(
-        prob, alg, args...; abstol, reltol, odesolve_kwargs,
-        termination_condition, alias, save_idxs, kwargs...
-    )
-    sccsol !== nothing && return sccsol
-
     tspan = __get_tspan(prob.u0, alg)
 
     f = if prob isa SteadyStateProblem
@@ -216,19 +213,36 @@ function SciMLBase.__solve(
     haskey(kwargs, :callback) && (callback = CallbackSet(callback, kwargs[:callback]))
     haskey(odesolve_kwargs, :callback) &&
         (callback = CallbackSet(callback, odesolve_kwargs[:callback]))
-    kwargs = pairs(__without_verbose(kwargs))
-    # Construct and solve the ODEProblem
+    run_kwargs = pairs(__without_verbose(kwargs))
     odeprob = ODEProblem{isinplace(prob), true}(f, prob.u0, tspan, prob.p)
+    odealias = SciMLBase.ODEAliasSpecifier(;
+        alias_p = alias.alias_p, alias_f = alias.alias_f, alias_u0 = alias.alias_u0
+    )
+    return (; odeprob, tc_cache, abstol, reltol, callback, run_kwargs, odealias)
+end
+
+function SciMLBase.__solve(
+        prob::SciMLBase.AbstractSteadyStateProblem, alg::DynamicSS,
+        args...; abstol = 1.0e-8, reltol = 1.0e-6, odesolve_kwargs = (;),
+        save_idxs = nothing, termination_condition = NonlinearSolveBase.NormTerminationMode(infnorm),
+        alias = SciMLBase.NonlinearAliasSpecifier(), kwargs...
+    )
+    sccsol = __solve_scc_lowering(
+        prob, alg, args...; abstol, reltol, odesolve_kwargs,
+        termination_condition, alias, save_idxs, kwargs...
+    )
+    sccsol !== nothing && return sccsol
+
+    setup = __dynamicss_ode_setup(
+        prob, alg; abstol, reltol, odesolve_kwargs, termination_condition, alias, kwargs...
+    )
     odesol = solve(
-        odeprob, alg.alg, args...; abstol, reltol, kwargs...,
-        odesolve_kwargs..., callback, save_end = true,
-        alias = SciMLBase.ODEAliasSpecifier(;
-            alias_p = alias.alias_p,
-            alias_f = alias.alias_f, alias_u0 = alias.alias_u0
-        )
+        setup.odeprob, alg.alg, args...; setup.abstol, setup.reltol,
+        setup.run_kwargs..., odesolve_kwargs..., setup.callback, save_end = true,
+        alias = setup.odealias
     )
 
-    resid, u, retcode = __get_result_from_sol(tc_cache, odesol)
+    resid, u, retcode = __get_result_from_sol(setup.tc_cache, odesol)
 
     if save_idxs !== nothing
         u = u[save_idxs]
@@ -238,6 +252,36 @@ function SciMLBase.__solve(
     return SciMLBase.build_solution(
         prob, DynamicSS(odesol.alg, alg.tspan), u, resid;
         retcode, odesol.stats, original = odesol
+    )
+end
+
+# `init` on a `DynamicSS`-lowered problem hands back the underlying ODE
+# integrator (with the steady-state termination callback installed) rather than
+# eagerly integrating to steady state, so it composes with `solve!`/`step!` the
+# way `init`/`solve!` do for a plain `ODEProblem`. An `SCCNonlinearProblem`
+# lowering has no such continuous trajectory — its blocks solve sequentially, not
+# through one shared integrator — so there is nothing to "start and pause": it is
+# solved eagerly here, exactly as `__solve` does, and the finished solution is
+# returned instead of an integrator.
+function SciMLBase.__init(
+        prob::SciMLBase.AbstractSteadyStateProblem, alg::DynamicSS,
+        args...; abstol = 1.0e-8, reltol = 1.0e-6, odesolve_kwargs = (;),
+        save_idxs = nothing, termination_condition = NonlinearSolveBase.NormTerminationMode(infnorm),
+        alias = SciMLBase.NonlinearAliasSpecifier(), kwargs...
+    )
+    sccsol = __solve_scc_lowering(
+        prob, alg, args...; abstol, reltol, odesolve_kwargs,
+        termination_condition, alias, save_idxs, kwargs...
+    )
+    sccsol !== nothing && return sccsol
+
+    setup = __dynamicss_ode_setup(
+        prob, alg; abstol, reltol, odesolve_kwargs, termination_condition, alias, kwargs...
+    )
+    return init(
+        setup.odeprob, alg.alg, args...; setup.abstol, setup.reltol,
+        setup.run_kwargs..., odesolve_kwargs..., setup.callback, save_end = true,
+        alias = setup.odealias
     )
 end
 
@@ -270,19 +314,14 @@ function __sicnm_g_and_jvp!(gval, jvp, g!::G, y, z) where {G}
     return nothing
 end
 
-function SciMLBase.__solve(
-        prob::SciMLBase.AbstractSteadyStateProblem, alg::SICNM,
-        args...; abstol = 1.0e-8, reltol = 1.0e-6, odesolve_kwargs = (;),
-        save_idxs = nothing,
-        termination_condition = NonlinearSolveBase.AbsNormTerminationMode(infnorm),
-        alias = SciMLBase.NonlinearAliasSpecifier(), kwargs...
+# Shared `SICNM` setup for `__solve` and `__init`: builds the extended DAE ODE
+# problem whose continuous-Newton flow drives `g(y) = 0`, along with the
+# termination callback based on the residual `g`. Mirrors `__dynamicss_ode_setup`
+# above; see its docstring for why an SCC lowering is not handled here.
+function __sicnm_ode_setup(
+        prob::SciMLBase.AbstractSteadyStateProblem, alg::SICNM;
+        abstol, reltol, odesolve_kwargs, termination_condition, kwargs...
     )
-    sccsol = __solve_scc_lowering(
-        prob, alg, args...; abstol, reltol, odesolve_kwargs,
-        termination_condition, alias, save_idxs, kwargs...
-    )
-    sccsol !== nothing && return sccsol
-
     prob.u0 isa AbstractVector ||
         throw(ArgumentError("SICNM currently only supports `AbstractVector` initial conditions"))
     tspan = __get_tspan(prob.u0, alg)
@@ -384,17 +423,42 @@ function SciMLBase.__solve(
 
     odefun = SciMLBase.ODEFunction{iip, SciMLBase.FullSpecialize}(fext; mass_matrix)
     odeprob = ODEProblem{iip}(odefun, u0, tspan, p)
+    run_kwargs = pairs(__without_verbose(kwargs))
+
+    return (;
+        odeprob, tc_cache, n, g, gbuf, iip,
+        ode_abstol, ode_reltol, callback, run_kwargs,
+    )
+end
+
+function SciMLBase.__solve(
+        prob::SciMLBase.AbstractSteadyStateProblem, alg::SICNM,
+        args...; abstol = 1.0e-8, reltol = 1.0e-6, odesolve_kwargs = (;),
+        save_idxs = nothing,
+        termination_condition = NonlinearSolveBase.AbsNormTerminationMode(infnorm),
+        alias = SciMLBase.NonlinearAliasSpecifier(), kwargs...
+    )
+    sccsol = __solve_scc_lowering(
+        prob, alg, args...; abstol, reltol, odesolve_kwargs,
+        termination_condition, alias, save_idxs, kwargs...
+    )
+    sccsol !== nothing && return sccsol
+
+    setup = __sicnm_ode_setup(
+        prob, alg; abstol, reltol, odesolve_kwargs, termination_condition, kwargs...
+    )
     odesol = solve(
-        odeprob, alg.alg, args...; abstol = ode_abstol, reltol = ode_reltol,
-        kwargs..., odesolve_kwargs..., callback, save_end = true
+        setup.odeprob, alg.alg, args...; abstol = setup.ode_abstol,
+        reltol = setup.ode_reltol, setup.run_kwargs..., odesolve_kwargs...,
+        setup.callback, save_end = true
     )
 
-    u, retcode = __sicnm_result(tc_cache, odesol, n)
-    resid = if iip
-        g(gbuf, u)
-        gbuf
+    u, retcode = __sicnm_result(setup.tc_cache, odesol, setup.n)
+    resid = if setup.iip
+        setup.g(setup.gbuf, u)
+        setup.gbuf
     else
-        g(u)
+        setup.g(u)
     end
 
     if save_idxs !== nothing
@@ -405,6 +469,31 @@ function SciMLBase.__solve(
     return SciMLBase.build_solution(
         prob, SICNM(odesol.alg, alg.tspan, alg.linsolve), u, resid;
         retcode, odesol.stats, original = odesol
+    )
+end
+
+# See the analogous `DynamicSS` `__init` above for why an SCC lowering is solved
+# eagerly here rather than returning a partial integrator.
+function SciMLBase.__init(
+        prob::SciMLBase.AbstractSteadyStateProblem, alg::SICNM,
+        args...; abstol = 1.0e-8, reltol = 1.0e-6, odesolve_kwargs = (;),
+        save_idxs = nothing,
+        termination_condition = NonlinearSolveBase.AbsNormTerminationMode(infnorm),
+        alias = SciMLBase.NonlinearAliasSpecifier(), kwargs...
+    )
+    sccsol = __solve_scc_lowering(
+        prob, alg, args...; abstol, reltol, odesolve_kwargs,
+        termination_condition, alias, save_idxs, kwargs...
+    )
+    sccsol !== nothing && return sccsol
+
+    setup = __sicnm_ode_setup(
+        prob, alg; abstol, reltol, odesolve_kwargs, termination_condition, kwargs...
+    )
+    return init(
+        setup.odeprob, alg.alg, args...; abstol = setup.ode_abstol,
+        reltol = setup.ode_reltol, setup.run_kwargs..., odesolve_kwargs...,
+        setup.callback, save_end = true
     )
 end
 
