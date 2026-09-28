@@ -432,6 +432,17 @@ end
         @test sol.prob isa SteadyStateProblem
         @test sol.u ≈ reference.u
         @test sol[states] ≈ reference[states]
+        # Residual must match the original problem's state layout, not the
+        # (possibly shorter/empty) residual of the SCC lowering.
+        @test length(sol.resid) == length(sol.u)
+        @test sol.resid ≈ reference.resid atol = 1.0e-10
+
+        # `save_idxs` is applied after restoring the original state order.
+        saved = solve(prob, NewtonRaphson(); save_idxs = [2])
+        @test length(saved.u) == 1
+        @test saved.u ≈ sol.u[2:2]
+        @test length(saved.resid) == 1
+        @test saved.resid ≈ sol.resid[2:2] atol = 1.0e-10
     end
 end
 

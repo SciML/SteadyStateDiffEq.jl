@@ -5,6 +5,19 @@ function __build_ssrootfind_solution(prob, nlsol)
     )
 end
 
+function __scc_original_residual(prob, u)
+    # The SCC lowering may drop observed/eliminated states from its residual, so
+    # `sol.resid` is not in the original state layout (and may even be empty).
+    # Recompute against the original steady-state residual at the restored `u`.
+    if isinplace(prob)
+        resid = similar(u)
+        prob.f(resid, u, prob.p, Inf)
+        return resid
+    else
+        return prob.f(u, prob.p, Inf)
+    end
+end
+
 function __restore_scc_steady_state_solution(
         prob, sol; save_idxs = nothing, alg = sol.alg, original = sol
     )
@@ -15,11 +28,13 @@ function __restore_scc_steady_state_solution(
     states = variable_symbols(prob)
     length(states) == length(prob.u0) || return nothing
     u = sol[states]
+    resid = __scc_original_residual(prob, u)
     if save_idxs !== nothing
         u = u[save_idxs]
+        resid = resid[save_idxs]
     end
     return SciMLBase.build_solution(
-        prob, alg, u, sol.resid;
+        prob, alg, u, resid;
         retcode = sol.retcode, stats = sol.stats, original
     )
 end
@@ -38,7 +53,8 @@ function SciMLBase.__solve(
     end
     nlsol = solve(nlprob, alg.alg, args...; fwd...)
     restored = __restore_scc_steady_state_solution(
-        prob, nlsol; alg = SSRootfind(nlsol.alg)
+        prob, nlsol; alg = SSRootfind(nlsol.alg),
+        save_idxs = get(kwargs, :save_idxs, nothing)
     )
     restored !== nothing && return restored
     # The fallback keeps the lowering as the solution problem when it has no
@@ -176,7 +192,9 @@ function SciMLBase.solve(prob::SteadyStateProblem, args...; kwargs...)
             _prob, args...; kwargs...
         )
     end
-    restored = __restore_scc_steady_state_solution(_prob, sol)
+    restored = __restore_scc_steady_state_solution(
+        _prob, sol; save_idxs = get(kwargs, :save_idxs, nothing)
+    )
     return restored === nothing ? sol : restored
 end
 
