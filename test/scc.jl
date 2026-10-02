@@ -4,7 +4,7 @@ using ModelingToolkit: t_nounits as t, D_nounits as D
 using SCCNonlinearSolve: SCCAlg
 using SciMLBase: HomotopyProblem, LinearProblem, NonlinearProblem, SCCNonlinearProblem,
     SteadyStateSolution
-using SymbolicIndexingInterface: state_values
+using SymbolicIndexingInterface: state_values, parameter_values
 
 function coupled_scc_problem(iip, use_vector)
     f = if iip
@@ -270,8 +270,6 @@ end
         @test psol.u ≈ [1.0] atol = 1.0e-9
     end
 
-    # `init` defers to `solve`: cache state_values keep the original `u0`
-    # ordering, and `solve!` matches a direct `solve` (including SCC).
     @testset "init on an SCC lowering" for builder in (false, true)
         sccprob = dynamicss_scc_problem(false, false)
         lowered = builder ? (prob -> sccprob) : sccprob
@@ -290,8 +288,6 @@ end
         @test cached.alg isa DynamicSS
     end
 
-    # Multiple roots: DynamicSS follows the attracting flow from u0=1.8 to 1;
-    # a default nonlinear polyalgorithm can land on the unstable root at 2.
     @testset "init DynamicSS matches solve on a multiple-root SCC" for builder in
         (false, true)
 
@@ -313,7 +309,36 @@ end
         @test cached.alg isa DynamicSS
     end
 
-    # Deferred init does not materialize a callable lowering; solve! does once.
+    @testset "SCC deferred cache contract" for alg in
+        (nothing, SSRootfind(), DynamicSS(Tsit5()), SICNM(Rodas5P()))
+
+        calls = Ref(0)
+        lowering = function (prob)
+            calls[] += 1
+            return SCCNonlinearProblem(
+                (NonlinearProblem((u, p) -> p .- u, prob.u0, prob.p),),
+                (Returns(nothing),)
+            )
+        end
+        prob = SteadyStateProblem(
+            (u, p, t) -> p .- u, [0.0], [2.0]; lowered_problem = lowering
+        )
+        direct = solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        calls[] = 0
+        cache = init(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        @test calls[] == 1
+        @test state_values(cache) === prob.u0
+        @test parameter_values(cache) === prob.p
+        for _ in 1:2
+            cached = solve!(cache)
+            @test successful_retcode(cached)
+            @test cached.u ≈ direct.u atol = 1.0e-8
+            @test cached.u ≈ [2.0] atol = 1.0e-8
+            @test state_values(cache) == [0.0]
+            @test calls[] == 1
+        end
+    end
+
     @testset "non-SCC callable lowering not double-evaluated" begin
         calls = Ref(0)
         lowering = function (prob)
@@ -321,9 +346,9 @@ end
             return NonlinearProblem((u, p) -> 1 .- u, [0.0])
         end
         prob = SteadyStateProblem(f_oop, [0.0]; lowered_problem = lowering)
-        init(prob)
-        @test calls[] == 0
-        sol = solve!(init(prob))
+        cache = init(prob)
+        @test calls[] == 1
+        sol = solve!(cache)
         @test calls[] == 1
         @test successful_retcode(sol)
         @test sol.u ≈ [1.0] atol = 1.0e-9
