@@ -151,7 +151,9 @@ nonlinear block's residual to be attracting under its own pseudo-transient
 dynamics, not a globally attracting concatenated field. A `SteadyStateProblem`
 that records an `SCCNonlinearProblem` as its `lowered_problem` (for example one
 built by `ModelingToolkit`) takes the same sequential solve, and its solution
-is expressed on the lowered problem's state ordering.
+is expressed on the lowered problem's state ordering. `init` on that problem
+drops the SCC lowering and initializes the original residual, because there is
+no per-block `init` cache for `SCCNonlinearProblem`.
 
 # Arguments
 

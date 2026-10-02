@@ -116,6 +116,22 @@ function __solve_scc_lowering(
     )
 end
 
+# `init` has no SCC cache (`SCCNonlinearProblem` has no `u0`). Drop that
+# lowering so `init` uses the original residual; `solve` still uses SCC.
+# Hook `__init(..., ::Nothing)` so termination-mode `init` is not stolen.
+function __unlowered_if_scc(prob::SteadyStateProblem)
+    lp = prob.lowered_problem
+    lp === nothing && return prob
+    lp isa SciMLBase.AbstractSciMLProblem || (lp = lp(prob))
+    lp isa SciMLBase.SCCNonlinearProblem || return prob
+    return remake(prob; lowered_problem = nothing)
+end
+
+function SciMLBase.__init(prob::SteadyStateProblem, ::Nothing, args...; kwargs...)
+    nlprob = NonlinearProblem(__unlowered_if_scc(prob))
+    return SciMLBase.__init(nlprob, nothing, args...; kwargs...)
+end
+
 # A `SteadyStateProblem`'s stored SCC lowering materializes through
 # `SciMLBase.NonlinearProblem(prob)` during `solve`. When it is an
 # `SCCNonlinearProblem`, the generic nonlinear-solve path re-dispatches
