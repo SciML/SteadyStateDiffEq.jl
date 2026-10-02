@@ -4,6 +4,7 @@ using ModelingToolkit: t_nounits as t, D_nounits as D
 using SCCNonlinearSolve: SCCAlg
 using SciMLBase: HomotopyProblem, LinearProblem, NonlinearProblem, SCCNonlinearProblem,
     SteadyStateSolution
+using SymbolicIndexingInterface: state_values
 
 function coupled_scc_problem(iip, use_vector)
     f = if iip
@@ -269,6 +270,17 @@ end
         @test psol.u ≈ [1.0] atol = 1.0e-9
     end
 
+    @testset "init on an SCC lowering" for builder in (false, true)
+        sccprob = dynamicss_scc_problem(false, false)
+        lowered = builder ? (prob -> sccprob) : sccprob
+        prob = SteadyStateProblem(f_oop, [0.0, 0.0]; lowered_problem = lowered)
+        integ = init(prob, DynamicSS(Tsit5()); save_everystep = false)
+        u = state_values(integ)
+        @test length(u) == 2
+        @test u == [0.0, 0.0]
+        @test NonlinearProblem(prob) === sccprob
+    end
+
     # `remake`d values reach a callable lowering through the materialized
     # problem, so the block solve sees the new operating point.
     sccprob = dynamicss_scc_problem(false, false)
@@ -417,6 +429,9 @@ end
     @test sol[[a, b, x]] ≈ [1, 2, cbrt(3)] atol = 1.0e-8
     @test sol.prob isa SCCNonlinearProblem
     @test sol.original isa Tuple{SciMLBase.LinearSolution, NonlinearSolution}
+
+    integ = init(prob, DynamicSS(Tsit5()); save_everystep = false)
+    @test length(state_values(integ)) == length(prob.u0)
 end
 
 @testset "SICNM on a SteadyStateProblem with an SCC lowering" begin
