@@ -270,15 +270,63 @@ end
         @test psol.u ≈ [1.0] atol = 1.0e-9
     end
 
+    # `init` defers to `solve`: cache state_values keep the original `u0`
+    # ordering, and `solve!` matches a direct `solve` (including SCC).
     @testset "init on an SCC lowering" for builder in (false, true)
         sccprob = dynamicss_scc_problem(false, false)
         lowered = builder ? (prob -> sccprob) : sccprob
         prob = SteadyStateProblem(f_oop, [0.0, 0.0]; lowered_problem = lowered)
-        integ = init(prob, DynamicSS(Tsit5()); save_everystep = false)
+        alg = DynamicSS(Tsit5())
+        integ = init(prob, alg; save_everystep = false, abstol = 1.0e-10, reltol = 1.0e-10)
         u = state_values(integ)
         @test length(u) == 2
         @test u == [0.0, 0.0]
         @test NonlinearProblem(prob) === sccprob
+        direct = solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        cached = solve!(integ)
+        @test successful_retcode(cached)
+        @test cached.u ≈ direct.u atol = 1.0e-8
+        @test cached.prob === sccprob
+        @test cached.alg isa DynamicSS
+    end
+
+    # Multiple roots: DynamicSS follows the attracting flow from u0=1.8 to 1;
+    # a default nonlinear polyalgorithm can land on the unstable root at 2.
+    @testset "init DynamicSS matches solve on a multiple-root SCC" for builder in
+        (false, true)
+
+        f_root(u, p) = @. -(u - 1) * (u - 2) * (u - 3)
+        sccprob = SCCNonlinearProblem(
+            (NonlinearProblem(f_root, [1.8]),), (Returns(nothing),)
+        )
+        lowered = builder ? (prob -> sccprob) : sccprob
+        prob = SteadyStateProblem(
+            (u, p, t) -> f_root(u, p), [1.8]; lowered_problem = lowered
+        )
+        alg = DynamicSS(Tsit5(); tspan = 100.0)
+        direct = solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        cached = solve!(init(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10))
+        @test successful_retcode(direct)
+        @test successful_retcode(cached)
+        @test direct.u ≈ [1.0] atol = 1.0e-8
+        @test cached.u ≈ direct.u atol = 1.0e-8
+        @test cached.alg isa DynamicSS
+    end
+
+    # Deferred init does not materialize a callable lowering; solve! does once.
+    @testset "non-SCC callable lowering not double-evaluated" begin
+        calls = Ref(0)
+        lowering = function (prob)
+            calls[] += 1
+            return NonlinearProblem((u, p) -> 1 .- u, [0.0])
+        end
+        prob = SteadyStateProblem(f_oop, [0.0]; lowered_problem = lowering)
+        init(prob)
+        @test calls[] == 0
+        sol = solve!(init(prob))
+        @test calls[] == 1
+        @test successful_retcode(sol)
+        @test sol.u ≈ [1.0] atol = 1.0e-9
     end
 
     # `remake`d values reach a callable lowering through the materialized
@@ -424,14 +472,20 @@ end
     sys = mtkcompile(model)
     prob = SteadyStateProblem(sys, [a => 0.8, b => 1.8, x => 0.8])
 
-    sol = solve(prob, DynamicSS(); abstol = 1.0e-10, reltol = 1.0e-10)
+    alg = DynamicSS(Tsit5())
+    sol = solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
     @test successful_retcode(sol)
     @test sol[[a, b, x]] ≈ [1, 2, cbrt(3)] atol = 1.0e-8
     @test sol.prob isa SCCNonlinearProblem
     @test sol.original isa Tuple{SciMLBase.LinearSolution, NonlinearSolution}
 
-    integ = init(prob, DynamicSS(Tsit5()); save_everystep = false)
+    integ = init(prob, alg; save_everystep = false, abstol = 1.0e-10, reltol = 1.0e-10)
     @test length(state_values(integ)) == length(prob.u0)
+    cached = solve!(integ)
+    @test successful_retcode(cached)
+    @test cached[[a, b, x]] ≈ [1, 2, cbrt(3)] atol = 1.0e-8
+    @test cached.u ≈ sol.u atol = 1.0e-8
+    @test cached.alg isa DynamicSS
 end
 
 @testset "SICNM on a SteadyStateProblem with an SCC lowering" begin
