@@ -151,9 +151,9 @@ nonlinear block's residual to be attracting under its own pseudo-transient
 dynamics, not a globally attracting concatenated field. A `SteadyStateProblem`
 that records an `SCCNonlinearProblem` as its `lowered_problem` (for example one
 built by `ModelingToolkit`) takes the same sequential solve, and its solution
-is expressed on the lowered problem's state ordering. `init` on that problem
-drops the SCC lowering and initializes the original residual, because there is
-no per-block `init` cache for `SCCNonlinearProblem`.
+is expressed on the lowered problem's state ordering. `init` returns a deferred
+cache whose `solve!` calls `solve` with the same algorithm (including the SCC
+path); the cache's `state_values` follow the original problem's `u0` ordering.
 
 # Arguments
 
@@ -256,7 +256,9 @@ nonlinear block to be tractable for SICNM on its own, not the concatenated
 system. A `SteadyStateProblem` that records an `SCCNonlinearProblem` as its
 `lowered_problem` (for example one built by `ModelingToolkit`) takes the same
 sequential solve, and its solution is expressed on the lowered problem's state
-ordering.
+ordering. `init` returns a deferred cache whose `solve!` calls `solve` with the
+same algorithm (including the SCC path); the cache's `state_values` follow the
+original problem's `u0` ordering.
 
 # Arguments
 

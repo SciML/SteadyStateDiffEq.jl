@@ -116,20 +116,63 @@ function __solve_scc_lowering(
     )
 end
 
-# `init` has no SCC cache (`SCCNonlinearProblem` has no `u0`). Drop that
-# lowering so `init` uses the original residual; `solve` still uses SCC.
-# Hook `__init(..., ::Nothing)` so termination-mode `init` is not stolen.
-function __unlowered_if_scc(prob::SteadyStateProblem)
-    lp = prob.lowered_problem
-    lp === nothing && return prob
-    lp isa SciMLBase.AbstractSciMLProblem || (lp = lp(prob))
-    lp isa SciMLBase.SCCNonlinearProblem || return prob
-    return remake(prob; lowered_problem = nothing)
+# `init` on a `SteadyStateProblem` that stores an `SCCNonlinearProblem` lowering
+# cannot build a stepping cache (`SCCNonlinearProblem` has no `u0`/`kwargs`).
+# Defer to `solve` so `solve!(init(prob, alg))` matches `solve(prob, alg)`,
+# including the sequential SCC path for `DynamicSS`/`SICNM`/`SSRootfind`.
+# The cache exposes `state_values`/`parameter_values` of the original problem
+# (SII / original `u0` ordering); the solution from `solve!` uses the same
+# problem/state ordering as a direct `solve` (SCC lowering when present).
+# Hook `__init` rather than `init` so termination-mode `init(prob, mode, du, u)`
+# is not stolen. Strip NonlinearSolveBase bookkeeping kwargs before deferral.
+@concrete mutable struct SteadyStateDeferSolveCache
+    prob
+    alg
+    args::Tuple
+    kwargs
+end
+
+function __strip_init_bookkeeping(;
+        default_set = nothing, second_time = nothing, kwargs...
+    )
+    return (; kwargs...)
+end
+
+function __defer_solve_cache(prob, alg, args...; kwargs...)
+    return SteadyStateDeferSolveCache(
+        prob, alg, args, __strip_init_bookkeeping(; kwargs...)
+    )
+end
+
+function SciMLBase.__init(
+        prob::SteadyStateProblem, alg::SteadyStateDiffEqAlgorithm, args...;
+        kwargs...
+    )
+    return __defer_solve_cache(prob, alg, args...; kwargs...)
 end
 
 function SciMLBase.__init(prob::SteadyStateProblem, ::Nothing, args...; kwargs...)
-    nlprob = NonlinearProblem(__unlowered_if_scc(prob))
-    return SciMLBase.__init(nlprob, nothing, args...; kwargs...)
+    # Generic NonlinearSolveBase `__init` wraps `AbstractDEAlgorithm`s (including
+    # `DynamicSS`) as `__init(prob, nothing, alg, ...)`; recover the algorithm.
+    if !isempty(args) && first(args) isa SteadyStateDiffEqAlgorithm
+        return __defer_solve_cache(prob, first(args), Base.tail(args)...; kwargs...)
+    end
+    return __defer_solve_cache(prob, nothing, args...; kwargs...)
+end
+
+function SciMLBase.solve!(cache::SteadyStateDeferSolveCache)
+    if cache.alg === nothing
+        return solve(cache.prob, cache.args...; cache.kwargs...)
+    end
+    return solve(cache.prob, cache.alg, cache.args...; cache.kwargs...)
+end
+
+function SymbolicIndexingInterface.state_values(cache::SteadyStateDeferSolveCache)
+    return SymbolicIndexingInterface.state_values(cache.prob)
+end
+
+function SymbolicIndexingInterface.parameter_values(cache::SteadyStateDeferSolveCache)
+    return SymbolicIndexingInterface.parameter_values(cache.prob)
 end
 
 # A `SteadyStateProblem`'s stored SCC lowering materializes through
@@ -159,6 +202,14 @@ function SciMLBase.solve(prob::SteadyStateProblem, args...; kwargs...)
     _prob = NonlinearSolveBase.get_concrete_problem(prob; kwargs...)
     nlprob = NonlinearProblem(_prob)
     nlprob isa SciMLBase.SCCNonlinearProblem && return solve(nlprob, args...; kwargs...)
+    # A non-SCC lowering was already materialized above; reuse it so a callable
+    # `lowered_problem` is not evaluated a second time by the upstream path.
+    if _prob isa SteadyStateProblem && _prob.lowered_problem !== nothing
+        return invoke(
+            solve, Tuple{SciMLBase.AbstractNonlinearProblem, Vararg{Any}},
+            nlprob, args...; kwargs...
+        )
+    end
     return invoke(
         solve, Tuple{SciMLBase.AbstractNonlinearProblem, Vararg{Any}},
         _prob, args...; kwargs...
