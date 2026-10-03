@@ -497,13 +497,13 @@ end
     sys = mtkcompile(model)
     prob = SteadyStateProblem(sys, [a => 0.8, b => 1.8, x => 0.8])
 
-    alg = DynamicSS(Tsit5())
-    sol = solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+    sol = solve(prob, DynamicSS(); abstol = 1.0e-10, reltol = 1.0e-10)
     @test successful_retcode(sol)
     @test sol[[a, b, x]] ≈ [1, 2, cbrt(3)] atol = 1.0e-8
     @test sol.prob isa SCCNonlinearProblem
     @test sol.original isa Tuple{SciMLBase.LinearSolution, NonlinearSolution}
 
+    alg = DynamicSS(Tsit5())
     integ = init(prob, alg; save_everystep = false, abstol = 1.0e-10, reltol = 1.0e-10)
     @test length(state_values(integ)) == length(prob.u0)
     cached = solve!(integ)
