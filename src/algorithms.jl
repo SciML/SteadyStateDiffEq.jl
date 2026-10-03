@@ -151,7 +151,12 @@ nonlinear block's residual to be attracting under its own pseudo-transient
 dynamics, not a globally attracting concatenated field. A `SteadyStateProblem`
 that records an `SCCNonlinearProblem` as its `lowered_problem` (for example one
 built by `ModelingToolkit`) takes the same sequential solve, and its solution
-is expressed on the lowered problem's state ordering.
+is expressed on the lowered problem's state ordering. For an SCC lowering,
+`init` returns a deferred cache: each `solve!` performs a fresh solve with this
+algorithm. Its `state_values` and `parameter_values` expose the original initial
+state and parameters, even after solving. It does not support stepping,
+reinitialization, or symbolic indexing; use the returned solution for solved
+state values and symbolic indexing.
 
 # Arguments
 
@@ -254,7 +259,9 @@ nonlinear block to be tractable for SICNM on its own, not the concatenated
 system. A `SteadyStateProblem` that records an `SCCNonlinearProblem` as its
 `lowered_problem` (for example one built by `ModelingToolkit`) takes the same
 sequential solve, and its solution is expressed on the lowered problem's state
-ordering.
+ordering. For an SCC lowering, `init` returns a deferred cache with the same
+interface and limitations documented for [`DynamicSS`](@ref). Each `solve!`
+performs a fresh solve with the requested `SICNM` algorithm.
 
 # Arguments
 

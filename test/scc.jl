@@ -4,6 +4,7 @@ using ModelingToolkit: t_nounits as t, D_nounits as D
 using SCCNonlinearSolve: SCCAlg
 using SciMLBase: HomotopyProblem, LinearProblem, NonlinearProblem, SCCNonlinearProblem,
     SteadyStateSolution
+using SymbolicIndexingInterface: state_values, parameter_values
 
 function coupled_scc_problem(iip, use_vector)
     f = if iip
@@ -269,6 +270,90 @@ end
         @test psol.u ≈ [1.0] atol = 1.0e-9
     end
 
+    @testset "init on an SCC lowering" for builder in (false, true)
+        sccprob = dynamicss_scc_problem(false, false)
+        lowered = builder ? (prob -> sccprob) : sccprob
+        prob = SteadyStateProblem(f_oop, [0.0, 0.0]; lowered_problem = lowered)
+        alg = DynamicSS(Tsit5())
+        integ = init(prob, alg; save_everystep = false, abstol = 1.0e-10, reltol = 1.0e-10)
+        u = state_values(integ)
+        @test length(u) == 2
+        @test u == [0.0, 0.0]
+        @test NonlinearProblem(prob) === sccprob
+        direct = solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        cached = solve!(integ)
+        @test successful_retcode(cached)
+        @test cached.u ≈ direct.u atol = 1.0e-8
+        @test cached.prob === sccprob
+        @test cached.alg isa DynamicSS
+    end
+
+    @testset "init DynamicSS matches solve on a multiple-root SCC" for builder in
+        (false, true)
+
+        f_root(u, p) = @. -(u - 1) * (u - 2) * (u - 3)
+        sccprob = SCCNonlinearProblem(
+            (NonlinearProblem(f_root, [1.8]),), (Returns(nothing),)
+        )
+        lowered = builder ? (prob -> sccprob) : sccprob
+        prob = SteadyStateProblem(
+            (u, p, t) -> f_root(u, p), [1.8]; lowered_problem = lowered
+        )
+        alg = DynamicSS(Tsit5(); tspan = 100.0)
+        direct = solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        cached = solve!(init(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10))
+        @test successful_retcode(direct)
+        @test successful_retcode(cached)
+        @test direct.u ≈ [1.0] atol = 1.0e-8
+        @test cached.u ≈ direct.u atol = 1.0e-8
+        @test cached.alg isa DynamicSS
+    end
+
+    @testset "SCC deferred cache contract" for alg in
+        (nothing, SSRootfind(), DynamicSS(Tsit5()), SICNM(Rodas5P()))
+
+        calls = Ref(0)
+        lowering = function (prob)
+            calls[] += 1
+            return SCCNonlinearProblem(
+                (NonlinearProblem((u, p) -> p .- u, prob.u0, prob.p),),
+                (Returns(nothing),)
+            )
+        end
+        prob = SteadyStateProblem(
+            (u, p, t) -> p .- u, [0.0], [2.0]; lowered_problem = lowering
+        )
+        direct = solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        calls[] = 0
+        cache = init(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        @test calls[] == 1
+        @test state_values(cache) === prob.u0
+        @test parameter_values(cache) === prob.p
+        for _ in 1:2
+            cached = solve!(cache)
+            @test successful_retcode(cached)
+            @test cached.u ≈ direct.u atol = 1.0e-8
+            @test cached.u ≈ [2.0] atol = 1.0e-8
+            @test state_values(cache) == [0.0]
+            @test calls[] == 1
+        end
+    end
+
+    @testset "non-SCC callable lowering not double-evaluated" begin
+        calls = Ref(0)
+        lowering = function (prob)
+            calls[] += 1
+            return NonlinearProblem((u, p) -> 1 .- u, [0.0])
+        end
+        prob = SteadyStateProblem(f_oop, [0.0]; lowered_problem = lowering)
+        cache = init(prob)
+        @test calls[] == 1
+        sol = solve!(cache)
+        @test calls[] == 1
+        @test successful_retcode(sol)
+        @test sol.u ≈ [1.0] atol = 1.0e-9
+    end
+
     # `remake`d values reach a callable lowering through the materialized
     # problem, so the block solve sees the new operating point.
     sccprob = dynamicss_scc_problem(false, false)
@@ -417,6 +502,15 @@ end
     @test sol[[a, b, x]] ≈ [1, 2, cbrt(3)] atol = 1.0e-8
     @test sol.prob isa SCCNonlinearProblem
     @test sol.original isa Tuple{SciMLBase.LinearSolution, NonlinearSolution}
+
+    alg = DynamicSS(Tsit5())
+    integ = init(prob, alg; save_everystep = false, abstol = 1.0e-10, reltol = 1.0e-10)
+    @test length(state_values(integ)) == length(prob.u0)
+    cached = solve!(integ)
+    @test successful_retcode(cached)
+    @test cached[[a, b, x]] ≈ [1, 2, cbrt(3)] atol = 1.0e-8
+    @test cached.u ≈ sol.u atol = 1.0e-8
+    @test cached.alg isa DynamicSS
 end
 
 @testset "SICNM on a SteadyStateProblem with an SCC lowering" begin

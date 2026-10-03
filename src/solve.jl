@@ -116,6 +116,47 @@ function __solve_scc_lowering(
     )
 end
 
+@concrete struct SteadyStateDeferSolveCache
+    prob
+    alg
+    args::Tuple
+    kwargs
+end
+
+function __defer_solve_cache(
+        prob, alg, args...; default_set = nothing, second_time = nothing, kwargs...
+    )
+    return SteadyStateDeferSolveCache(prob, alg, args, (; kwargs...))
+end
+
+function SciMLBase.__init(prob::SteadyStateProblem, ::Nothing, args...; kwargs...)
+    nlprob = NonlinearProblem(prob)
+    if !(nlprob isa SciMLBase.SCCNonlinearProblem)
+        return SciMLBase.__init(nlprob, nothing, args...; kwargs...)
+    end
+    prob = remake(prob; lowered_problem = nlprob)
+    # The default dispatch passes a steady-state algorithm after `nothing`.
+    if !isempty(args) && first(args) isa SteadyStateDiffEqAlgorithm
+        return __defer_solve_cache(prob, first(args), Base.tail(args)...; kwargs...)
+    end
+    return __defer_solve_cache(prob, nothing, args...; kwargs...)
+end
+
+function SciMLBase.solve!(cache::SteadyStateDeferSolveCache)
+    if cache.alg === nothing
+        return solve(cache.prob, cache.args...; cache.kwargs...)
+    end
+    return solve(cache.prob, cache.alg, cache.args...; cache.kwargs...)
+end
+
+function SymbolicIndexingInterface.state_values(cache::SteadyStateDeferSolveCache)
+    return SymbolicIndexingInterface.state_values(cache.prob)
+end
+
+function SymbolicIndexingInterface.parameter_values(cache::SteadyStateDeferSolveCache)
+    return SymbolicIndexingInterface.parameter_values(cache.prob)
+end
+
 # A `SteadyStateProblem`'s stored SCC lowering materializes through
 # `SciMLBase.NonlinearProblem(prob)` during `solve`. When it is an
 # `SCCNonlinearProblem`, the generic nonlinear-solve path re-dispatches
