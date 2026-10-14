@@ -48,6 +48,23 @@ prob = SteadyStateProblem((u, p, t) -> 1 .- u, [0.0])
 sol = solve(prob, SICNM(Rodas3d()))
 ```
 
+## SCC-split steady states
+
+`SCCSteadyStateProblem` is the SCC-split form of a steady-state problem: its
+residual decomposes into a block-lower-triangular sequence of `LinearProblem`/
+`NonlinearProblem`/`HomotopyProblem` blocks. Build it from a block list with
+`SCCSteadyStateProblem(probs, explicitfuns!, p)`, or from a model with
+`ModelingToolkit.SCCSteadyStateProblem(sys, op)`.
+
+`DynamicSS` and `SICNM` solve the blocks sequentially in SCC order — each
+nonlinear block is integrated to steady state on its own residual after
+`explicitfuns!` updates its caches from the upstream solutions. `SSRootfind`, a
+bare `solve`, or any nonlinear algorithm solve the problem through the SCC
+solver (`SCCNonlinearSolve.jl`). The solution's `u` and `resid` are in the
+compressed SCC state layout; symbolic indexing (`sol[x]`, `sol.ps[p]`) goes
+through `prob.f.sys`, and `save_idxs` is a selection in that layout — integers,
+or states resolved through `variable_index`.
+
 ## API
 
 ```@docs
