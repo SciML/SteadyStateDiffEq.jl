@@ -354,8 +354,9 @@ function layout_cases()
     # explicit `Tsit5` the step size is pinned at the stability limit near the
     # fixed point, so the residual plateaus at a tolerance-sized noise floor
     # right at the termination threshold and flips between `Success` and
-    # `Failure` under small perturbations; the L-stable `Rodas5P` grows the
-    # step size and contracts the residual well below it.
+    # `Failure` under small perturbations. `Rodas5P` is not step-size limited at
+    # the fixed point, so the residual keeps decaying until the terminator
+    # fires (here at t ≈ 14).
     allalgs = (
         NewtonRaphson(), SSRootfind(NewtonRaphson()), DynamicSS(Rodas5P()),
         SICNM(Rodas5P()),
@@ -539,6 +540,7 @@ end
             end
             for T in (SCCSteadyStateProblem, SCCNonlinearProblem)
                 prob = T((blk,), (Returns(nothing),), nothing, true)
+                counter[] = 0
                 @test_throws DimensionMismatch solve(prob, alg)
                 @test counter[] > 0
             end
@@ -554,6 +556,7 @@ end
         )
         for T in (SCCSteadyStateProblem, SCCNonlinearProblem)
             prob = T((blk,), (Returns(nothing),), nothing, true)
+            counter[] = 0
             sol = solve(prob, alg)
             @test successful_retcode(sol)
             @test counter[] > 0
