@@ -1,8 +1,9 @@
-using SteadyStateDiffEq, NonlinearSolve, OrdinaryDiffEq, Test
+using SteadyStateDiffEq, NonlinearSolve, OrdinaryDiffEq, LinearAlgebra, Test
 using ModelingToolkit
 using ModelingToolkit: t_nounits as t, D_nounits as D
 using SCCNonlinearSolve: SCCAlg
-using SymbolicIndexingInterface: state_values, variable_index, variable_symbols
+import SymbolicIndexingInterface
+using SymbolicIndexingInterface: parameter_symbols, state_values, variable_index, variable_symbols
 using SciMLBase: HomotopyProblem, LinearProblem, NonlinearProblem, SCCNonlinearProblem,
     SteadyStateSolution
 
@@ -349,11 +350,14 @@ function layout_cases()
     )
     Xss, Yss = [0.35 -0.5; -0.25 1.5] \ [1.0, 1.0]
 
-    # `DynamicSS(Tsit5())` over `tspan = Inf` does not reach its terminator on
-    # this system — the integrator exhausts maxiters while the residual is still
-    # well above the tolerance — so the pseudo-transient runs use a finite span.
+    # `DynamicSS` integrates each block's residual to steady state. With the
+    # explicit `Tsit5` the step size is pinned at the stability limit near the
+    # fixed point, so the residual plateaus at a tolerance-sized noise floor
+    # right at the termination threshold and flips between `Success` and
+    # `Failure` under small perturbations; the L-stable `Rodas5P` grows the
+    # step size and contracts the residual well below it.
     allalgs = (
-        NewtonRaphson(), SSRootfind(NewtonRaphson()), DynamicSS(Tsit5(); tspan = 100),
+        NewtonRaphson(), SSRootfind(NewtonRaphson()), DynamicSS(Rodas5P()),
         SICNM(Rodas5P()),
     )
     nlalgs = (NewtonRaphson(), SSRootfind(NewtonRaphson()))
@@ -460,6 +464,115 @@ end
         )
         @test saved.u ≈ [sol[s1]] atol = 1.0e-7
         @test saved.original.u ≈ sol.u atol = 1.0e-7
+        # States not in `save_idxs` and observed expressions are unresolvable on
+        # the saved-state layout; parameters still index through it.
+        for s in Iterators.drop(variable_symbols(prob), 1)
+            @test_throws ErrorException saved[s]
+        end
+        observed === nothing || @test_throws ErrorException saved[first(observed)]
+        if !isempty(parameter_symbols(prob))
+            p1 = first(parameter_symbols(prob))
+            @test saved.ps[p1] == sol.ps[p1]
+        end
+
+        # A symbolic `save_idxs` selection is applied in selection order.
+        rev = reverse(variable_symbols(prob))
+        saved = solve(
+            prob, alg; save_idxs = rev, abstol = 1.0e-10, reltol = 1.0e-10
+        )
+        for s in rev
+            @test saved[s] ≈ sol[s] atol = 1.0e-7
+        end
+    end
+end
+
+@testset "SCCSteadyStateProblem save_idxs symbolic indexing" begin
+    # A single 2-state linear block with solution x = 1, y = 2; `sys` provides
+    # symbolic names so `saved[s]` resolves against the saved-state layout.
+    sysc = SymbolicIndexingInterface.SymbolCache([:x, :y], [], nothing)
+    linblock() = LinearProblem(Diagonal(ones(2)), [1.0, 2.0]; u0 = zeros(2))
+
+    @testset "alg=$(nameof(typeof(alg)))" for alg in (
+            NewtonRaphson(), SSRootfind(NewtonRaphson()),
+            DynamicSS(Rodas5P()), SICNM(Rodas5P()),
+        )
+        prob = SCCSteadyStateProblem(
+            (linblock(),), (Returns(nothing),), nothing, true; sys = sysc
+        )
+        saved = solve(prob, alg; save_idxs = [2, 1])
+        @test saved.u == [2, 1]
+        @test saved[:x] == 1
+        @test saved[:y] == 2
+        @test saved[[:x, :y]] == [1, 2]
+        @test saved.original[:x] == 1
+        @test saved.original[:y] == 2
+
+        saved = solve(prob, alg; save_idxs = [:y])
+        @test saved.u == [2]
+        @test saved[:y] == 2
+        @test_throws ErrorException saved[:x]
+        @test saved.original[:x] == 1
+    end
+end
+
+@testset "stateless and empty SCC blocks" begin
+    @testset "alg=$(nameof(typeof(alg)))" for alg in (
+            DynamicSS(Rodas5P()), SICNM(Rodas5P()),
+        )
+        # A stateless block with a nonempty residual is rejected — the residual
+        # is still evaluated once.
+        for iip in (false, true)
+            counter = Ref(0)
+            blk = if iip
+                NonlinearProblem(
+                    NonlinearFunction(
+                        (res, u, p) -> (counter[] += 1; res .= [1.0]);
+                        resid_prototype = [0.0]
+                    ), Float64[]
+                )
+            else
+                NonlinearProblem(
+                    NonlinearFunction(
+                        (u, p) -> (counter[] += 1; [1.0]); resid_prototype = [0.0]
+                    ), Float64[]
+                )
+            end
+            for T in (SCCSteadyStateProblem, SCCNonlinearProblem)
+                prob = T((blk,), (Returns(nothing),), nothing, true)
+                @test_throws DimensionMismatch solve(prob, alg)
+                @test counter[] > 0
+            end
+        end
+
+        # A stateless block whose residual is empty returns Success; the
+        # residual is evaluated rather than assumed zero.
+        counter = Ref(0)
+        blk = NonlinearProblem(
+            NonlinearFunction(
+                (u, p) -> (counter[] += 1; Float64[]); resid_prototype = Float64[]
+            ), Float64[]
+        )
+        for T in (SCCSteadyStateProblem, SCCNonlinearProblem)
+            prob = T((blk,), (Returns(nothing),), nothing, true)
+            sol = solve(prob, alg)
+            @test successful_retcode(sol)
+            @test counter[] > 0
+        end
+
+        # An empty linear block is a no-op, alone or before another block.
+        lblk() = LinearProblem(zeros(0, 0), Float64[]; u0 = Float64[])
+        for T in (SCCSteadyStateProblem, SCCNonlinearProblem)
+            sol = solve(T((lblk(),), (Returns(nothing),), nothing, true), alg)
+            @test successful_retcode(sol)
+            @test sol.u == Float64[]
+            prob = T(
+                (lblk(), LinearProblem([2.0;;], [4.0]; u0 = [0.0])),
+                (Returns(nothing), Returns(nothing)), nothing, true
+            )
+            sol = solve(prob, alg)
+            @test successful_retcode(sol)
+            @test sol.u ≈ [2.0]
+        end
     end
 end
 
