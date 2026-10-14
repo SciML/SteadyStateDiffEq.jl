@@ -13,7 +13,8 @@ using SciMLBase: SciMLBase, CallbackSet, LinearProblem, NonlinearProblem, ODEPro
     SteadyStateProblem, SteadyStateSolution, get_du, init,
     isinplace, remake, solve, successful_retcode
 using SymbolicIndexingInterface:
-    NotSymbolic, parameter_values, state_values, symbolic_type, variable_index
+    NotSymbolic, SymbolicIndexingInterface, parameter_values, state_values,
+    symbolic_type, variable_index, variable_symbols
 
 const infnorm = Base.Fix2(norm, Inf)
 
