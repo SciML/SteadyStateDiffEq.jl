@@ -75,6 +75,13 @@ states that were not saved and observed expressions (which need the full
 state) throw. Parameters and independent variables index as usual, and
 `sol.original` is the full solution over all states.
 
+Solve-time `u0` and `p` keywords are applied to the problem with `remake`
+before dispatch: `u0` is given in the compressed state layout — in the saved
+layout when solving a saved-state view — and `p` is subject to
+`parameters_alias`, so an unaliased problem throws since its blocks hold
+separate parameter objects. The returned solution's `prob` is the updated
+problem.
+
 ## API
 
 ```@docs

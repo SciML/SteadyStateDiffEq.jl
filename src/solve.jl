@@ -26,6 +26,15 @@ function SciMLBase.__solve(
 end
 
 
+# Solve-time `u0`/`p` go through `remake`, which chunks `u0` into the blocks and
+# enforces `parameters_alias`; the solve then runs on the updated problem.
+function __scc_apply_overrides(prob; u0 = nothing, p = nothing, kwargs...)
+    if u0 !== nothing || p !== nothing
+        prob = remake(prob; u0 = u0 === nothing ? missing : u0, p = p === nothing ? missing : p)
+    end
+    return prob, kwargs
+end
+
 # An SCCNonlinearProblem has no top-level `u0`/`kwargs` fields, so it cannot go
 # through the generic AbstractNonlinearProblem solve preprocessing. Forward it
 # directly to the wrapped algorithm instead, which dispatches to the SCC solver
@@ -34,6 +43,7 @@ function SciMLBase.solve(
         prob::SciMLBase.SCCNonlinearProblem, alg::SSRootfind,
         args...; kwargs...
     )
+    prob, kwargs = __scc_apply_overrides(prob; kwargs...)
     nlsol = solve(prob, alg.alg, args...; kwargs...)
     return __build_ssrootfind_solution(prob, nlsol)
 end
@@ -131,6 +141,7 @@ function SciMLBase.solve(
         prob::SciMLBase.SCCNonlinearProblem, alg::Union{DynamicSS, SICNM},
         args...; kwargs...
     )
+    prob, kwargs = __scc_apply_overrides(prob; kwargs...)
     return __solve_scc_blocks(prob, alg, args...; kwargs...)
 end
 
@@ -138,6 +149,7 @@ function SciMLBase.solve(
         prob::SciMLBase.SCCSteadyStateProblem, args...;
         save_idxs = nothing, kwargs...
     )
+    prob, kwargs = __scc_apply_overrides(prob; kwargs...)
     alg = isempty(args) ? nothing : first(args)
     alg === nothing && (alg = get(kwargs, :alg, nothing))
     kwargs = (; (n => v for (n, v) in pairs(kwargs) if n !== :alg)...)
@@ -274,8 +286,12 @@ function SymbolicIndexingInterface.finalize_parameters_hook!(w::SCCSavedProblem,
 end
 
 function SciMLBase.solve(
-        w::SCCSavedProblem, args...; save_idxs = nothing, kwargs...
+        w::SCCSavedProblem, args...; save_idxs = nothing, u0 = nothing, p = nothing,
+        kwargs...
     )
+    if u0 !== nothing || p !== nothing
+        w = remake(w; u0 = u0 === nothing ? missing : u0, p = p === nothing ? missing : p)
+    end
     composed = if save_idxs === nothing
         w.idxs
     else

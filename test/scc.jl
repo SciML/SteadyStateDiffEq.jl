@@ -647,6 +647,96 @@ end
     end
 end
 
+@testset "solve-time u0 and p overrides" begin
+    tol = (; abstol = 1.0e-10, reltol = 1.0e-10)
+    kblock(p) = NonlinearProblem(
+        NonlinearFunction(
+            (u, p) -> [p[1] - u[1]];
+            sys = SymbolicIndexingInterface.SymbolCache([:x], [:k])
+        ), [0.0], p
+    )
+    function xblock(u0)
+        return NonlinearProblem((u, p) -> [u[1] - u[1]^3], [u0])
+    end
+    function yblock(u0)
+        return NonlinearProblem((u, p) -> [4u[1] - u[1]^3], [u0])
+    end
+    cubic() = NonlinearProblem(
+        (u, p) -> [u[1] - u[1]^3, 4u[2] - u[2]^3], [0.8, 1.5]
+    )
+    function mkparam()
+        p = [1.0]
+        return SCCSteadyStateProblem(
+            (kblock(p),), (Returns(nothing),), p, true;
+            sys = SymbolicIndexingInterface.SymbolCache([:x], [:k])
+        )
+    end
+    mkblocks() = (
+        SCCSteadyStateProblem(
+            (xblock(0.8), yblock(1.5)), (Returns(nothing), Returns(nothing)),
+            nothing, true; sys = SymbolicIndexingInterface.SymbolCache([:x, :y], [])
+        ),
+        SCCSteadyStateProblem(
+            (cubic(),), (Returns(nothing),),
+            nothing, true; sys = SymbolicIndexingInterface.SymbolCache([:x, :y], [])
+        ),
+    )
+    @testset "alg=$(nameof(typeof(alg)))" for alg in (
+            NewtonRaphson(), SSRootfind(NewtonRaphson()),
+            DynamicSS(Rodas5P()), SICNM(Rodas5P()),
+        )
+        prob = mkparam()
+        sol = solve(prob, alg; p = [3.0], tol...)
+        @test sol.u ≈ [3] atol = 1.0e-6
+        @test sol.ps[:k] == 3
+        @test parameter_values(sol.prob) == [3.0]
+        @test sol.resid ≈ [parameter_values(sol.prob)[1] - sol.u[1]] atol = 1.0e-8
+        @test prob.ps[:k] == 1
+
+        saved = solve(prob, alg; save_idxs = [:x], tol...)
+        re = solve(saved.prob, alg; p = [3.0], tol...)
+        @test re.u ≈ [3] atol = 1.0e-6
+        @test re.ps[:k] == 3
+
+        unaliased = SCCSteadyStateProblem(
+            (kblock([1.0]),), (Returns(nothing),), [1.0], false;
+            sys = SymbolicIndexingInterface.SymbolCache([:x], [:k])
+        )
+        @test_throws ArgumentError solve(unaliased, alg; p = [3.0])
+
+        if !(alg isa typeof(NewtonRaphson()))
+            p = [1.0]
+            nlprob = SCCNonlinearProblem(
+                (kblock(p),), (Returns(nothing),), p, true;
+                sys = SymbolicIndexingInterface.SymbolCache([:x], [:k])
+            )
+            nlsol = solve(nlprob, alg; p = [3.0], tol...)
+            @test nlsol.u ≈ [3] atol = 1.0e-6
+            @test parameter_values(nlsol.prob) == [3.0]
+        end
+
+        for prob in mkblocks()
+            sol = solve(prob, alg; u0 = [-0.8, -1.5], tol...)
+            @test sol.u ≈ [-1, -2] atol = 1.0e-6
+            @test state_values(prob) == [0.8, 1.5]
+
+            saved = solve(prob, alg; save_idxs = [:y, :x], tol...)
+            @test saved.u ≈ [2, 1] atol = 1.0e-6
+            re = solve(saved.prob, alg; u0 = [-1.5, 0.8], tol...)
+            @test re.u ≈ [-2, 1] atol = 1.0e-6
+            @test re.u ≈ solve(remake(saved.prob; u0 = [-1.5, 0.8]), alg; tol...).u atol = 1.0e-6
+
+            saved = solve(prob, alg; save_idxs = [:y], tol...)
+            r = solve(saved.prob, alg; u0 = [-1.5], tol...)
+            @test r.u ≈ [-2] atol = 1.0e-6
+            @test r.original.u ≈ [1, -2] atol = 1.0e-6
+
+            saved = solve(prob, alg; save_idxs = :y, tol...)
+            @test solve(saved.prob, alg; u0 = -1.5, tol...).u ≈ -2 atol = 1.0e-6
+        end
+    end
+end
+
 @testset "stateless and empty SCC blocks" begin
     @testset "alg=$(nameof(typeof(alg)))" for alg in (
             DynamicSS(Rodas5P()), SICNM(Rodas5P()),
