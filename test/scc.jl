@@ -524,8 +524,11 @@ end
         @test re2[:x] == 1
         @test re2[:y] == 2
         @test solve(saved.prob, alg; save_idxs = [:y]).u == [2]
-        @test state_values(saved.prob) == [20.0, 10.0]
-        @test SymbolicIndexingInterface.getu(saved.prob, :y)(saved.prob) == 20.0
+        @test state_values(saved.prob) == state_values(prob)[[2, 1]]
+        @test SymbolicIndexingInterface.getu(saved.prob, :y)(saved.prob) ==
+            SymbolicIndexingInterface.getu(prob, :y)(prob)
+        @test SymbolicIndexingInterface.getu(saved.prob, :x)(saved.prob) ==
+            SymbolicIndexingInterface.getu(prob, :x)(prob)
 
         pre_remake = copy(state_values(prob))
         r = remake(saved.prob; u0 = [30.0, 40.0])
@@ -533,11 +536,6 @@ end
         @test state_values(prob) == pre_remake
         @test solve(r, alg).u == [2, 1]
 
-        # Fresh problem: the saved problem's coordinates are the guesses as
-        # given, snapshotted before the solve updates the block `u0`s.
-        prob = SCCSteadyStateProblem(
-            (linblock(),), (Returns(nothing),), nothing, true; sys = sysc
-        )
         saved = solve(prob, alg; save_idxs = [:y])
         @test saved.u == [2]
         @test saved[:y] == 2
@@ -548,7 +546,8 @@ end
         @test re.u == [2]
         @test re[:y] == 2
         @test_throws ErrorException re[:x]
-        @test SymbolicIndexingInterface.getu(saved.prob, :y)(saved.prob) == 20.0
+        @test SymbolicIndexingInterface.getu(saved.prob, :y)(saved.prob) ==
+            SymbolicIndexingInterface.getu(prob, :y)(prob)
     end
 end
 

@@ -142,12 +142,8 @@ function SciMLBase.solve(
     alg === nothing && (alg = get(kwargs, :alg, nothing))
     kwargs = (; (n => v for (n, v) in pairs(kwargs) if n !== :alg)...)
     rest = isempty(args) ? () : Base.tail(args)
-    # The block solves alias `prob`'s `u0`s, so the saved problem is built
-    # before solving: its coordinates are the saved entries' values as given.
-    idxs = save_idxs === nothing ? nothing : __resolve_save_idxs(prob, save_idxs)
-    saved_prob = idxs === nothing ? nothing : SCCSavedProblem(prob, idxs)
     sol = __solve_scc_steady_state(prob, alg, rest...; kwargs...)
-    return __scc_save_idxs(sol, idxs, saved_prob)
+    return __scc_save_idxs(prob, sol, save_idxs)
 end
 
 function __solve_scc_steady_state(
@@ -231,19 +227,15 @@ function SymbolicIndexingInterface.all_symbols(w::SCCSavedStates)
     )
 end
 
-# A problem whose state layout is the saved-state selection of an
-# `SCCSteadyStateProblem`: `idxs` are the saved positions in `prob`'s
-# compressed layout. `state_values`, `solve` and `remake` all act in the saved
-# layout, while the wrapped problem keeps the full blocks, parameters and
-# index provider, narrowed to the saved states through `SCCSavedStates`.
+# A live view of an `SCCSteadyStateProblem` whose state layout is the
+# saved-state selection: `idxs` are the saved positions in `prob`'s compressed
+# layout. `state_values`, `solve` and `remake` all act in the saved layout;
+# the view shares the wrapped problem's blocks, parameters and index provider,
+# narrowed to the saved states through `SCCSavedStates`.
 struct SCCSavedProblem{
         uType, P <: SciMLBase.SCCSteadyStateProblem, I, F,
     } <: SciMLBase.AbstractSteadyStateProblem{uType, false}
     prob::P
-    # Saved entries of `prob`'s state values, snapshotted at construction:
-    # block `u0`s are aliased by the block solves, so a live readback would
-    # report post-solve values rather than the problem's own coordinates.
-    u0::uType
     idxs::I
     f::F
 end
@@ -256,23 +248,20 @@ function SCCSavedProblem(prob::SciMLBase.SCCSteadyStateProblem, idxs)
             Returns(nothing); sys = SCCSavedStates(prob.f.sys, vec(collect(idxs)))
         )
     end
-    u = state_values(prob)[idxs]
-    u isa AbstractArray && (u = copy(u))
-    return SCCSavedProblem{typeof(u), typeof(prob), typeof(idxs), typeof(f)}(
-        prob, u, idxs, f
-    )
+    return SCCSavedProblem{
+        typeof(state_values(prob)[idxs]), typeof(prob), typeof(idxs), typeof(f),
+    }(prob, idxs, f)
 end
 
 __saved_positions(w::SCCSavedProblem) = w.idxs isa Integer ? (w.idxs,) : w.idxs
 
-SymbolicIndexingInterface.state_values(w::SCCSavedProblem) = w.u0
+SymbolicIndexingInterface.state_values(w::SCCSavedProblem) =
+    state_values(w.prob)[w.idxs]
 SymbolicIndexingInterface.parameter_values(w::SCCSavedProblem) =
     parameter_values(w.prob)
 SymbolicIndexingInterface.symbolic_container(w::SCCSavedProblem) = w.f
 function SymbolicIndexingInterface.set_state!(w::SCCSavedProblem, val, idx)
-    set_state!(w.prob, val, __saved_positions(w)[idx])
-    w.u0 isa AbstractArray && (w.u0[idx] = val)
-    return val
+    return set_state!(w.prob, val, __saved_positions(w)[idx])
 end
 
 function SciMLBase.solve(
@@ -318,10 +307,13 @@ function __resolve_save_idxs(prob, save_idxs)
     return save_idxs isa AbstractArray ? map(resolve, save_idxs) : resolve(save_idxs)
 end
 
-function __scc_save_idxs(sol, idxs, saved_prob)
-    idxs === nothing && return sol
+function __scc_save_idxs(
+        prob::SciMLBase.SCCSteadyStateProblem, sol, save_idxs
+    )
+    save_idxs === nothing && return sol
+    idxs = __resolve_save_idxs(prob, save_idxs)
     return SciMLBase.build_solution(
-        saved_prob, sol.alg, sol.u[idxs], sol.resid[idxs];
+        SCCSavedProblem(prob, idxs), sol.alg, sol.u[idxs], sol.resid[idxs];
         retcode = sol.retcode, stats = sol.stats, left = sol.left,
         right = sol.right, original = sol
     )
