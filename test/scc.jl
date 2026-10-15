@@ -701,6 +701,7 @@ end
     @test sol.original[2].original isa SteadyStateSolution
     @test sol.original[2].original.original isa SciMLBase.AbstractODESolution
 end
+
 @testset "SteadyStateProblem with an SCC lowering" begin
     f_iip(du, u, p, t) = (du .= 1 .- u)
     f_oop(u, p, t) = 1 .- u
