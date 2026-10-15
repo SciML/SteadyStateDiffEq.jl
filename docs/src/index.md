@@ -65,12 +65,15 @@ compressed SCC state layout; symbolic indexing (`sol[x]`, `sol.ps[p]`) goes
 through `prob.f.sys`, and `save_idxs` is a selection in that layout — integers,
 or states resolved through `variable_index`.
 
-A solve with `save_idxs` returns a solution whose `prob` shares the original
-problem's blocks and parameters but whose index provider lists the saved states
-in selection order. `sol[s]` resolves saved states in any order; states that
-were not saved and observed expressions (which need the full state) throw.
-Parameters and independent variables index as usual, and `sol.original` is the
-full solution over all states.
+A solve with `save_idxs` returns a solution whose `prob` is a saved-state view
+of the original problem: it shares the original's blocks and parameters, but
+its states are the saved entries in selection order. Solving or remaking that
+problem works in the saved layout — `solve(saved.prob, alg)` applies the same
+selection and returns a solution over the saved states, and a `save_idxs`
+passed there selects among them. `sol[s]` resolves saved states in any order;
+states that were not saved and observed expressions (which need the full
+state) throw. Parameters and independent variables index as usual, and
+`sol.original` is the full solution over all states.
 
 ## API
 

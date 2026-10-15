@@ -253,7 +253,10 @@ end
         )
         @test saved.u ≈ full.u[[2, 4]]
         @test saved.resid ≈ full.resid[[2, 4]]
-        @test saved.prob === prob
+        @test state_values(saved.prob) == state_values(prob)[[2, 4]]
+        @test solve(
+            saved.prob, alg; abstol = 1.0e-10, reltol = 1.0e-10
+        ).u ≈ saved.u
         @test saved.original.u ≈ full.u
     end
 
@@ -484,6 +487,11 @@ end
         for s in rev
             @test saved[s] ≈ sol[s] atol = 1.0e-7
         end
+        re = solve(saved.prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        for s in rev
+            @test re[s] ≈ sol[s] atol = 1.0e-7
+        end
+        @test re.u ≈ saved.u
     end
 end
 
@@ -491,7 +499,7 @@ end
     # A single 2-state linear block with solution x = 1, y = 2; `sys` provides
     # symbolic names so `saved[s]` resolves against the saved-state layout.
     sysc = SymbolicIndexingInterface.SymbolCache([:x, :y], [], nothing)
-    linblock() = LinearProblem(Diagonal(ones(2)), [1.0, 2.0]; u0 = zeros(2))
+    linblock() = LinearProblem(Diagonal(ones(2)), [1.0, 2.0]; u0 = [10.0, 20.0])
 
     @testset "alg=$(nameof(typeof(alg)))" for alg in (
             NewtonRaphson(), SSRootfind(NewtonRaphson()),
@@ -508,11 +516,39 @@ end
         @test saved.original[:x] == 1
         @test saved.original[:y] == 2
 
+        # Re-solving the saved problem works in the saved layout: the same
+        # selection is applied again, and `u0`/`save_idxs` are interpreted in
+        # saved positions.
+        re2 = solve(saved.prob, alg)
+        @test re2.u == [2, 1]
+        @test re2[:x] == 1
+        @test re2[:y] == 2
+        @test solve(saved.prob, alg; save_idxs = [:y]).u == [2]
+        @test state_values(saved.prob) == [20.0, 10.0]
+        @test SymbolicIndexingInterface.getu(saved.prob, :y)(saved.prob) == 20.0
+
+        pre_remake = copy(state_values(prob))
+        r = remake(saved.prob; u0 = [30.0, 40.0])
+        @test state_values(r) == [30.0, 40.0]
+        @test state_values(prob) == pre_remake
+        @test solve(r, alg).u == [2, 1]
+
+        # Fresh problem: the saved problem's coordinates are the guesses as
+        # given, snapshotted before the solve updates the block `u0`s.
+        prob = SCCSteadyStateProblem(
+            (linblock(),), (Returns(nothing),), nothing, true; sys = sysc
+        )
         saved = solve(prob, alg; save_idxs = [:y])
         @test saved.u == [2]
         @test saved[:y] == 2
         @test_throws ErrorException saved[:x]
         @test saved.original[:x] == 1
+
+        re = solve(saved.prob, alg)
+        @test re.u == [2]
+        @test re[:y] == 2
+        @test_throws ErrorException re[:x]
+        @test SymbolicIndexingInterface.getu(saved.prob, :y)(saved.prob) == 20.0
     end
 end
 
