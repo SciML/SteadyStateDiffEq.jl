@@ -248,20 +248,29 @@ function SCCSavedProblem(prob::SciMLBase.SCCSteadyStateProblem, idxs)
             Returns(nothing); sys = SCCSavedStates(prob.f.sys, vec(collect(idxs)))
         )
     end
-    return SCCSavedProblem{
-        typeof(state_values(prob)[idxs]), typeof(prob), typeof(idxs), typeof(f),
-    }(prob, idxs, f)
+    uType = state_values(prob) === nothing ? Nothing : typeof(state_values(prob)[idxs])
+    return SCCSavedProblem{uType, typeof(prob), typeof(idxs), typeof(f)}(
+        prob, idxs, f
+    )
 end
 
 __saved_positions(w::SCCSavedProblem) = w.idxs isa Integer ? (w.idxs,) : w.idxs
 
-SymbolicIndexingInterface.state_values(w::SCCSavedProblem) =
-    state_values(w.prob)[w.idxs]
+function SymbolicIndexingInterface.state_values(w::SCCSavedProblem)
+    states = state_values(w.prob)
+    return states === nothing ? nothing : states[w.idxs]
+end
 SymbolicIndexingInterface.parameter_values(w::SCCSavedProblem) =
     parameter_values(w.prob)
 SymbolicIndexingInterface.symbolic_container(w::SCCSavedProblem) = w.f
 function SymbolicIndexingInterface.set_state!(w::SCCSavedProblem, val, idx)
     return set_state!(w.prob, val, __saved_positions(w)[idx])
+end
+function SymbolicIndexingInterface.set_parameter!(w::SCCSavedProblem, val, idx)
+    return set_parameter!(w.prob, val, idx)
+end
+function SymbolicIndexingInterface.finalize_parameters_hook!(w::SCCSavedProblem, sym)
+    return finalize_parameters_hook!(w.prob, sym)
 end
 
 function SciMLBase.solve(
@@ -279,7 +288,18 @@ function SciMLBase.remake(
         w::SCCSavedProblem; u0 = missing, p = missing, kwargs...
     )
     if u0 isa Number || (u0 isa AbstractArray && eltype(u0) <: Number)
-        full = collect(state_values(w.prob))
+        old = state_values(w.prob)
+        T = promote_type(
+            old === nothing ? Union{} : eltype(old),
+            u0 isa Number ? typeof(u0) : eltype(u0)
+        )
+        full = if old === nothing
+            # A guess-less problem has no values at the unsaved positions;
+            # zeros match the guess `LinearSolve` uses when none is given.
+            zeros(T, sum(size(b.A, 2) for b in w.prob.probs))
+        else
+            copyto!(Vector{T}(undef, length(old)), old)
+        end
         positions = collect(__saved_positions(w))
         if u0 isa Number
             full[positions] .= u0

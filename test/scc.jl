@@ -1,9 +1,12 @@
 using SteadyStateDiffEq, NonlinearSolve, OrdinaryDiffEq, LinearAlgebra, Test
+using ForwardDiff
 using ModelingToolkit
 using ModelingToolkit: t_nounits as t, D_nounits as D
 using SCCNonlinearSolve: SCCAlg
 import SymbolicIndexingInterface
-using SymbolicIndexingInterface: parameter_symbols, state_values, variable_index, variable_symbols
+using SymbolicIndexingInterface:
+    parameter_symbols, parameter_values, setp, state_values, variable_index,
+    variable_symbols
 using SciMLBase: HomotopyProblem, LinearProblem, NonlinearProblem, SCCNonlinearProblem,
     SteadyStateSolution
 
@@ -548,6 +551,99 @@ end
         @test_throws ErrorException re[:x]
         @test SymbolicIndexingInterface.getu(saved.prob, :y)(saved.prob) ==
             SymbolicIndexingInterface.getu(prob, :y)(prob)
+    end
+end
+
+@testset "saved-problem parameter updates reach the blocks" begin
+    blk(c, s) = NonlinearProblem(
+        NonlinearFunction((u, p) -> [c * p[1] - u[1]]; sys = SymbolicIndexingInterface.SymbolCache([s], [:k])),
+        [0.0], [1.0]
+    )
+    mkprob() = SCCSteadyStateProblem(
+        (blk(1, :x), blk(2, :y)), (Returns(nothing), Returns(nothing)),
+        [1.0], false; sys = SymbolicIndexingInterface.SymbolCache([:x, :y], [:k])
+    )
+    @testset "alg=$(nameof(typeof(alg)))" for alg in (
+            NewtonRaphson(), SSRootfind(NewtonRaphson()),
+            DynamicSS(Rodas5P()), SICNM(Rodas5P()),
+        )
+        prob = mkprob()
+        setp(prob, :k)(prob, 3.0)
+        @test solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10).u ≈ [3, 6] atol = 1.0e-6
+
+        prob = mkprob()
+        saved = solve(prob, alg; save_idxs = [:y], abstol = 1.0e-10, reltol = 1.0e-10)
+        @test saved.u ≈ [2] atol = 1.0e-6
+        setp(saved.prob, :k)(saved.prob, 3.0)
+        @test all(b -> parameter_values(b) == [3.0], saved.prob.prob.probs)
+        re = solve(saved.prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        @test re.ps[:k] == 3
+        @test re.u ≈ [6.0] atol = 1.0e-6
+        @test re[:y] ≈ 6 atol = 1.0e-6
+    end
+end
+
+@testset "guess-less blocks support save_idxs" begin
+    @testset "alg=$(nameof(typeof(alg)))" for alg in (
+            NewtonRaphson(), SSRootfind(NewtonRaphson()),
+            DynamicSS(Rodas5P()), SICNM(Rodas5P()),
+        )
+        prob = SCCSteadyStateProblem(
+            (LinearProblem(Diagonal(ones(2)), [1.0, 2.0]),),
+            (Returns(nothing),); sys = SymbolicIndexingInterface.SymbolCache([:x, :y], [])
+        )
+        @test state_values(prob) === nothing
+        @test solve(prob, alg).u == [1, 2]
+
+        for (sel, expected) in (
+                ([2], [2]), ([:y], [2]), ([2, 1], [2, 1]),
+                ([:y, :x], [2, 1]), (2, 2), (:y, 2),
+            )
+            saved = solve(prob, alg; save_idxs = sel)
+            @test saved.u == expected
+            @test saved[:y] == 2
+            @test state_values(saved.prob) === nothing
+            @test solve(saved.prob, alg).u == expected
+            if sel isa AbstractArray
+                @test solve(saved.prob, alg; save_idxs = [:y]).u == [2]
+            end
+        end
+
+        saved = solve(prob, alg; save_idxs = [2, 1])
+        r = remake(saved.prob; u0 = [5.0, 6.0])
+        @test state_values(r) == [5.0, 6.0]
+        @test solve(r, alg).u == [2, 1]
+    end
+end
+
+@testset "saved remake preserves replacement numeric type" begin
+    linblock() = LinearProblem(Diagonal(ones(2)), [1.0, 2.0]; u0 = [10.0, 20.0])
+    @testset "alg=$(nameof(typeof(alg)))" for alg in (
+            NewtonRaphson(), SSRootfind(NewtonRaphson()),
+            DynamicSS(Rodas5P()), SICNM(Rodas5P()),
+        )
+        prob = SCCSteadyStateProblem(
+            (linblock(),), (Returns(nothing),), nothing, true;
+            sys = SymbolicIndexingInterface.SymbolCache([:x, :y], [], nothing)
+        )
+        saved = solve(prob, alg; save_idxs = [2])
+        unsaved = state_values(prob)[1]
+        b = big"1.2345678901234567890123456789"
+        r = remake(saved.prob; u0 = [b])
+        @test state_values(r) == [b]
+        @test eltype(state_values(r)) == BigFloat
+        @test state_values(r.prob)[1] == unsaved
+        @test state_values(remake(prob; u0 = [10.0, b]))[2] == b
+
+        d = ForwardDiff.Dual(1.5, 1.0)
+        r = remake(saved.prob; u0 = [d])
+        @test state_values(r) == [d]
+        @test ForwardDiff.partials(only(state_values(r))) == ForwardDiff.partials(d)
+        @test state_values(r.prob) == [unsaved, d]
+
+        saved = solve(prob, alg; save_idxs = 2)
+        r = remake(saved.prob; u0 = b)
+        @test state_values(r) == b
     end
 end
 
