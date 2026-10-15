@@ -10,8 +10,19 @@ function SciMLBase.__solve(
         args...; kwargs...
     )
     nlprob = NonlinearProblem(prob)
-    nlsol = solve(nlprob, alg.alg, args...; kwargs...)
-    return __build_ssrootfind_solution(prob, nlsol)
+    fwd = kwargs
+    if nlprob isa SciMLBase.SCCNonlinearProblem
+        # The nonlinear solve pipeline injects `alias`/`verbose` as nonlinear
+        # specifier types, which `LinearProblem` blocks in the SCC solve do not
+        # understand.
+        fwd = (; (n => v for (n, v) in pairs(kwargs) if n !== :alias && n !== :verbose)...)
+    end
+    nlsol = solve(nlprob, alg.alg, args...; fwd...)
+    # A stored `lowered_problem` (e.g. an `SCCNonlinearProblem`) solves in the
+    # lowering's own state ordering, so its solution is expressed on the
+    # lowering rather than the steady-state problem.
+    solprob = __lowered_problem(prob) === nothing ? prob : nlprob
+    return __build_ssrootfind_solution(solprob, nlsol)
 end
 
 
@@ -316,6 +327,64 @@ function __scc_save_idxs(sol, idxs, saved_prob)
     )
 end
 
+# `SteadyStateProblem.lowered_problem` is a SciMLBase 3.x field; reads go
+# through `hasfield` so this package also loads where the field is gone.
+function __lowered_problem(prob)
+    return prob isa SteadyStateProblem && hasfield(typeof(prob), :lowered_problem) ?
+        prob.lowered_problem : nothing
+end
+
+# A `SteadyStateProblem` that records an `SCCNonlinearProblem` lowering is
+# solved block-sequentially in the lowering's ordering instead of one
+# monolithic integration. Returns `nothing` when there is no SCC lowering.
+function __solve_scc_lowering(
+        prob, alg, args...; save_idxs = nothing, kwargs...
+    )
+    lp = __lowered_problem(prob)
+    lp === nothing && return nothing
+    lp isa SciMLBase.AbstractSciMLProblem || (lp = lp(prob))
+    lp isa SciMLBase.SCCNonlinearProblem || return nothing
+    sccsol = solve(lp, alg, args...; kwargs...)
+    save_idxs === nothing && return sccsol
+    return SciMLBase.build_solution(
+        lp, sccsol.alg, sccsol.u[save_idxs], sccsol.resid[save_idxs];
+        retcode = sccsol.retcode, original = sccsol
+    )
+end
+
+# A `SteadyStateProblem`'s stored SCC lowering materializes through
+# `SciMLBase.NonlinearProblem(prob)` during `solve`. When it is an
+# `SCCNonlinearProblem`, the generic nonlinear-solve path re-dispatches
+# `__solve` on it and the fallbacks try to convert it back via `prob.u0` — a
+# field it does not have — so the lowering goes through its own `solve`
+# dispatch instead, which routes bare and `AbstractNonlinearAlgorithm` solves
+# to the SCC solver (`SCCNonlinearSolve.jl`, loaded downstream). Algorithms
+# that do not lower to a nonlinear solve (`DynamicSS`, ODE algorithms) keep
+# their own `__solve` dispatch; non-SCC lowerings keep the upstream path
+# verbatim via `invoke`.
+function SciMLBase.solve(prob::SteadyStateProblem, args...; kwargs...)
+    alg = isempty(args) ? nothing : first(args)
+    alg === nothing && (alg = get(kwargs, :alg, nothing))
+    alg === nothing && prob.kwargs !== nothing &&
+        (alg = get(prob.kwargs, :alg, nothing))
+    if alg !== nothing && !(alg isa SciMLBase.AbstractNonlinearAlgorithm)
+        return invoke(
+            solve, Tuple{SciMLBase.AbstractNonlinearProblem, Vararg{Any}},
+            prob, args...; kwargs...
+        )
+    end
+    # Concretize like `NonlinearSolveBase.solve_up` (evaluates `u0(p, Inf)`-style
+    # `u0`s, promotes integer `u0`s, applies `u0`/`p` solve kwargs) so a
+    # callable `lowered_problem` sees the updated operating point.
+    _prob = NonlinearSolveBase.get_concrete_problem(prob; kwargs...)
+    nlprob = NonlinearProblem(_prob)
+    nlprob isa SciMLBase.SCCNonlinearProblem && return solve(nlprob, args...; kwargs...)
+    return invoke(
+        solve, Tuple{SciMLBase.AbstractNonlinearProblem, Vararg{Any}},
+        _prob, args...; kwargs...
+    )
+end
+
 __get_tspan(u0, alg::Union{DynamicSS, SICNM}) = __get_tspan(u0, alg.tspan)
 __get_tspan(u0, tspan::Tuple) = tspan
 function __get_tspan(u0, tspan::Number)
@@ -334,6 +403,12 @@ function SciMLBase.__solve(
         save_idxs = nothing, termination_condition = NonlinearSolveBase.NormTerminationMode(infnorm),
         alias = SciMLBase.NonlinearAliasSpecifier(), kwargs...
     )
+    sccsol = __solve_scc_lowering(
+        prob, alg, args...; abstol, reltol, odesolve_kwargs,
+        termination_condition, alias, save_idxs, kwargs...
+    )
+    sccsol !== nothing && return sccsol
+
     tspan = __get_tspan(prob.u0, alg)
 
     f = if prob isa SteadyStateProblem
@@ -438,6 +513,12 @@ function SciMLBase.__solve(
         termination_condition = NonlinearSolveBase.AbsNormTerminationMode(infnorm),
         alias = SciMLBase.NonlinearAliasSpecifier(), kwargs...
     )
+    sccsol = __solve_scc_lowering(
+        prob, alg, args...; abstol, reltol, odesolve_kwargs,
+        termination_condition, alias, save_idxs, kwargs...
+    )
+    sccsol !== nothing && return sccsol
+
     prob.u0 isa AbstractVector ||
         throw(ArgumentError("SICNM currently only supports `AbstractVector` initial conditions"))
     tspan = __get_tspan(prob.u0, alg)

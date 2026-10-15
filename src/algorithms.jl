@@ -97,6 +97,11 @@ An `SCCSteadyStateProblem` (for example the SCC decomposition built by
 `SCCNonlinearProblem(prob)`: it is forwarded to `alg` unchanged, and the
 solution is expressed on the SCC problem's compressed state ordering.
 
+A `SteadyStateProblem` that records a `lowered_problem` (for example the SCC
+decomposition stored by `ModelingToolkit`) is solved through that lowering;
+since the lowering defines its own state ordering, the returned solution is
+expressed on the lowered problem.
+
 # Arguments
 
   - `alg`: the nonlinear solver algorithm passed to `solve`. When `alg === nothing`,
@@ -151,7 +156,11 @@ nonlinear block's residual to be attracting under its own pseudo-transient
 dynamics, not a globally attracting concatenated field. An
 `SCCSteadyStateProblem` (for example one built by
 `ModelingToolkit.SCCSteadyStateProblem`) takes the same sequential solve, and
-its solution is expressed on the compressed state ordering.
+its solution is expressed on the compressed state ordering. A
+`SteadyStateProblem` that records an `SCCNonlinearProblem` as its
+`lowered_problem` (for example one built by `ModelingToolkit`) takes the same
+sequential solve, and its solution is expressed on the lowered problem's state
+ordering.
 
 # Arguments
 
@@ -253,7 +262,11 @@ continuous-Newton flow on the block residual — so convergence only requires ea
 nonlinear block to be tractable for SICNM on its own, not the concatenated
 system. An `SCCSteadyStateProblem` (for example one built by
 `ModelingToolkit.SCCSteadyStateProblem`) takes the same sequential solve, and
-its solution is expressed on the compressed state ordering.
+its solution is expressed on the compressed state ordering. A
+`SteadyStateProblem` that records an `SCCNonlinearProblem` as its
+`lowered_problem` (for example one built by `ModelingToolkit`) takes the same
+sequential solve, and its solution is expressed on the lowered problem's state
+ordering.
 
 # Arguments
 

@@ -702,3 +702,93 @@ end
     @test sol.original[2].original isa SteadyStateSolution
     @test sol.original[2].original.original isa SciMLBase.AbstractODESolution
 end
+@testset "SteadyStateProblem with an SCC lowering" begin
+    f_iip(du, u, p, t) = (du .= 1 .- u)
+    f_oop(u, p, t) = 1 .- u
+    @testset "iip=$iip builder=$builder alg=$alg" for iip in (false, true),
+            builder in (false, true),
+            alg in (
+                DynamicSS(Tsit5()),
+                SICNM(Rodas5P()),
+                SSRootfind(NewtonRaphson()),
+                SSRootfind(SCCAlg(; nlalg = NewtonRaphson())),
+            )
+
+        sccprob = dynamicss_scc_problem(iip, false)
+        lowered = builder ? (prob -> sccprob) : sccprob
+        prob = SteadyStateProblem(
+            iip ? f_iip : f_oop, [0.0, 0.0]; lowered_problem = lowered
+        )
+        sol = solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        @test successful_retcode(sol)
+        @test sol.u ≈ [1, 2, 1, 2] atol = 1.0e-8
+        @test sol.prob === sccprob
+        @test sol.original !== nothing
+    end
+
+    # Bare and `AbstractNonlinearAlgorithm` solves have no `__solve` dispatch of
+    # their own here; they land on the generic nonlinear-solve path, which
+    # converts back through `prob.u0` — absent on `SCCNonlinearProblem`. `solve`
+    # forwards the lowering to its own `solve` dispatch (the SCC solver)
+    # instead.
+    @testset "bare and nonlinear-alg solve" for iip in (false, true),
+            builder in (false, true),
+            alg in (nothing, NewtonRaphson())
+
+        sccprob = dynamicss_scc_problem(iip, false)
+        lowered = builder ? (prob -> sccprob) : sccprob
+        prob = SteadyStateProblem(
+            iip ? f_iip : f_oop, [0.0, 0.0]; lowered_problem = lowered
+        )
+        sol = alg === nothing ? solve(prob) : solve(prob, alg)
+        @test successful_retcode(sol)
+        @test sol.u ≈ [1, 2, 1, 2] atol = 1.0e-9
+    end
+
+    # Non-SCC lowerings and problems without a lowering keep the upstream
+    # nonlinear-solve path.
+    @testset "non-SCC lowering" begin
+        nlprob = NonlinearProblem((u, p) -> [u[1]^2 - 4], [1.0])
+        prob = SteadyStateProblem(f_oop, [0.0]; lowered_problem = nlprob)
+        sol = solve(prob)
+        @test successful_retcode(sol)
+        @test sol.u ≈ [2.0] atol = 1.0e-9
+
+        plain = SteadyStateProblem(f_oop, [0.0])
+        psol = solve(plain)
+        @test successful_retcode(psol)
+        @test psol.u ≈ [1.0] atol = 1.0e-9
+    end
+
+    # `remake`d values reach a callable lowering through the materialized
+    # problem, so the block solve sees the new operating point.
+    sccprob = dynamicss_scc_problem(false, false)
+    prob = SteadyStateProblem(
+        f_oop, [0.0, 0.0]; lowered_problem = prob -> sccprob
+    )
+    @test NonlinearProblem(prob) === sccprob
+    prob2 = remake(prob; u0 = [5.0, 6.0])
+    @test NonlinearProblem(prob2) === sccprob
+end
+
+# A `SteadyStateProblem` may record a non-SCC `lowered_problem`; it solves
+# through the lowering and the solution is expressed on the lowered problem's
+# own coordinates.
+@testset "SteadyStateProblem with a generic lowering" begin
+    ssys = SymbolicIndexingInterface.SymbolCache([:x, :y, :z], [], nothing)
+    lowsys = SymbolicIndexingInterface.SymbolCache([:y], [], nothing)
+    low = NonlinearProblem(
+        SciMLBase.NonlinearFunction((u, p) -> [2 - u[1]]; sys = lowsys), [0.0]
+    )
+    for lp in (low, prob -> low), alg in (SSRootfind(NewtonRaphson()), SSRootfind())
+        prob = SteadyStateProblem(
+            SciMLBase.ODEFunction((u, p, t) -> [1 - u[1], 2 - u[2], 3 - u[3]]; sys = ssys),
+            zeros(3); lowered_problem = lp
+        )
+        sol = solve(prob, alg)
+        @test sol.u ≈ [2]
+        @test variable_symbols(sol) == [:y]
+        @test sol[:y] ≈ 2
+        @test sol.prob === low
+    end
+end
