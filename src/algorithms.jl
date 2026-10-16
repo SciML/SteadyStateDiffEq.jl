@@ -92,6 +92,11 @@ requires the SCC solver implementation from `SCCNonlinearSolve.jl` to be loaded
 automatically), or an `SCCAlg` configured with separate linear and nonlinear
 block solvers.
 
+An `SCCSteadyStateProblem` (for example the SCC decomposition built by
+`ModelingToolkit.SCCSteadyStateProblem`) is solved through
+`SCCNonlinearProblem(prob)`: it is forwarded to `alg` unchanged, and the
+solution is expressed on the SCC problem's compressed state ordering.
+
 A `SteadyStateProblem` that records a `lowered_problem` (for example the SCC
 decomposition stored by `ModelingToolkit`) is solved through that lowering;
 since the lowering defines its own state ordering, the returned solution is
@@ -148,10 +153,14 @@ solutions through `explicitfuns!` as in the SCC solve. `LinearProblem` blocks
 are solved directly, and the remaining blocks are integrated to steady state by
 `DynamicSS` on the block residual — so convergence only requires each
 nonlinear block's residual to be attracting under its own pseudo-transient
-dynamics, not a globally attracting concatenated field. A `SteadyStateProblem`
-that records an `SCCNonlinearProblem` as its `lowered_problem` (for example one
-built by `ModelingToolkit`) takes the same sequential solve, and its solution
-is expressed on the lowered problem's state ordering.
+dynamics, not a globally attracting concatenated field. An
+`SCCSteadyStateProblem` (for example one built by
+`ModelingToolkit.SCCSteadyStateProblem`) takes the same sequential solve, and
+its solution is expressed on the compressed state ordering. A
+`SteadyStateProblem` that records an `SCCNonlinearProblem` as its
+`lowered_problem` (for example one built by `ModelingToolkit`) takes the same
+sequential solve, and its solution is expressed on the lowered problem's state
+ordering.
 
 # Arguments
 
@@ -251,7 +260,10 @@ solutions through `explicitfuns!` as in the SCC solve. `LinearProblem` blocks
 are solved directly, and the remaining blocks each run their own SICNM
 continuous-Newton flow on the block residual — so convergence only requires each
 nonlinear block to be tractable for SICNM on its own, not the concatenated
-system. A `SteadyStateProblem` that records an `SCCNonlinearProblem` as its
+system. An `SCCSteadyStateProblem` (for example one built by
+`ModelingToolkit.SCCSteadyStateProblem`) takes the same sequential solve, and
+its solution is expressed on the compressed state ordering. A
+`SteadyStateProblem` that records an `SCCNonlinearProblem` as its
 `lowered_problem` (for example one built by `ModelingToolkit`) takes the same
 sequential solve, and its solution is expressed on the lowered problem's state
 ordering.

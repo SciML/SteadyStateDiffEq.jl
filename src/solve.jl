@@ -21,12 +21,18 @@ function SciMLBase.__solve(
     # A stored `lowered_problem` (e.g. an `SCCNonlinearProblem`) solves in the
     # lowering's own state ordering, so its solution is expressed on the
     # lowering rather than the steady-state problem.
-    solprob = if prob isa SteadyStateProblem && prob.lowered_problem !== nothing
-        nlprob
-    else
-        prob
-    end
+    solprob = __lowered_problem(prob) === nothing ? prob : nlprob
     return __build_ssrootfind_solution(solprob, nlsol)
+end
+
+
+# Solve-time `u0`/`p` go through `remake`, which chunks `u0` into the blocks and
+# enforces `parameters_alias`; the solve then runs on the updated problem.
+function __scc_apply_overrides(prob; u0 = nothing, p = nothing, kwargs...)
+    if u0 !== nothing || p !== nothing
+        prob = remake(prob; u0 = u0 === nothing ? missing : u0, p = p === nothing ? missing : p)
+    end
+    return prob, kwargs
 end
 
 # An SCCNonlinearProblem has no top-level `u0`/`kwargs` fields, so it cannot go
@@ -37,20 +43,40 @@ function SciMLBase.solve(
         prob::SciMLBase.SCCNonlinearProblem, alg::SSRootfind,
         args...; kwargs...
     )
+    prob, kwargs = __scc_apply_overrides(prob; kwargs...)
     nlsol = solve(prob, alg.alg, args...; kwargs...)
     return __build_ssrootfind_solution(prob, nlsol)
 end
 
-# `DynamicSS`/`SICNM` on an `SCCNonlinearProblem` solve the blocks sequentially
+# Evaluate a stateless block's residual once: out-of-place blocks return it,
+# in-place blocks write into a `resid_prototype`-sized buffer. `HomotopyProblem`
+# residuals take the continuation parameter `λ`, evaluated at its end.
+function __scc_stateless_resid(
+        block::Union{NonlinearProblem, SciMLBase.HomotopyProblem}, u
+    )
+    p = parameter_values(block)
+    f = block.f
+    args = block isa SciMLBase.HomotopyProblem ? (u, p, last(block.λspan)) : (u, p)
+    if isinplace(block)
+        fbase = f isa SciMLBase.HomotopyNonlinearFunction ? f.f : f
+        proto = hasproperty(fbase, :resid_prototype) ? fbase.resid_prototype : nothing
+        resid = proto === nothing ? similar(u) : similar(proto)
+        f(resid, args...)
+        return resid
+    end
+    return f(args...)
+end
+
+# `DynamicSS`/`SICNM` on an SCC problem solve the blocks sequentially
 # in SCC order: each block's parameter cache is updated from the upstream
 # solutions through `explicitfuns!`, `LinearProblem` blocks are solved directly,
 # and the remaining blocks are integrated to steady state on the block
 # residual. `explicitfuns!` mutate the block caches, matching the
 # `SCCNonlinearSolve` protocol; each upstream solution is stripped to a plain
 # solution so generated explicit functions can index `sols[j][k]`/`sols[j].u`.
-function SciMLBase.solve(
-        prob::SciMLBase.SCCNonlinearProblem, alg::Union{DynamicSS, SICNM},
-        args...; kwargs...
+function __solve_scc_blocks(
+        prob::Union{SciMLBase.SCCNonlinearProblem, SciMLBase.SCCSteadyStateProblem},
+        alg::Union{DynamicSS, SICNM}, args...; kwargs...
     )
     sols = ()
     for i in eachindex(prob.probs)
@@ -67,6 +93,19 @@ function SciMLBase.solve(
             resid = linsol.resid === nothing ? A * linsol.u - b : linsol.resid
             SciMLBase.build_linear_solution(
                 nothing, linsol.u, resid, nothing; retcode = linsol.retcode
+            )
+        elseif state_values(block) !== nothing && isempty(state_values(block))
+            # A stateless block carries no integration; its residual must be
+            # identically empty, which is verified by evaluating it once.
+            u = copy(state_values(block))
+            resid = __scc_stateless_resid(block, u)
+            isempty(resid) || throw(
+                DimensionMismatch(
+                    "SCC block $i has no states but a residual of length $(length(resid))"
+                )
+            )
+            SciMLBase.build_solution(
+                block, nothing, u, resid; retcode = ReturnCode.Success
             )
         else
             # `HomotopyProblem` has no `solve` preprocessing support
@@ -86,8 +125,8 @@ function SciMLBase.solve(
         sols = (sols..., _sol)
     end
 
-    u = vcat(map(sol -> sol.u, sols)...)
-    resid = vcat(map(sol -> sol.resid, sols)...)
+    u = isempty(sols) ? Float64[] : vcat(map(sol -> sol.u, sols)...)
+    resid = isempty(sols) ? Float64[] : vcat(map(sol -> sol.resid, sols)...)
     retcode = SciMLBase.ReturnCode.Success
     for s in sols
         if !SciMLBase.successful_retcode(s)
@@ -98,13 +137,238 @@ function SciMLBase.solve(
     return SciMLBase.build_solution(prob, alg, u, resid; retcode, original = sols)
 end
 
+function SciMLBase.solve(
+        prob::SciMLBase.SCCNonlinearProblem, alg::Union{DynamicSS, SICNM},
+        args...; kwargs...
+    )
+    prob, kwargs = __scc_apply_overrides(prob; kwargs...)
+    return __solve_scc_blocks(prob, alg, args...; kwargs...)
+end
+
+function SciMLBase.solve(
+        prob::SciMLBase.SCCSteadyStateProblem, args...;
+        save_idxs = nothing, kwargs...
+    )
+    prob, kwargs = __scc_apply_overrides(prob; kwargs...)
+    alg = isempty(args) ? nothing : first(args)
+    alg === nothing && (alg = get(kwargs, :alg, nothing))
+    kwargs = (; (n => v for (n, v) in pairs(kwargs) if n !== :alg)...)
+    rest = isempty(args) ? () : Base.tail(args)
+    sol = __solve_scc_steady_state(prob, alg, rest...; kwargs...)
+    return __scc_save_idxs(prob, sol, save_idxs)
+end
+
+function __solve_scc_steady_state(
+        prob::SciMLBase.SCCSteadyStateProblem, alg::Union{DynamicSS, SICNM},
+        args...; kwargs...
+    )
+    return __solve_scc_blocks(prob, alg, args...; kwargs...)
+end
+
+function __solve_scc_steady_state(
+        prob::SciMLBase.SCCSteadyStateProblem, alg::SSRootfind,
+        args...; kwargs...
+    )
+    nlsol = solve(SCCNonlinearProblem(prob), alg.alg, args...; kwargs...)
+    return SciMLBase.build_solution(
+        prob, SSRootfind(nlsol.alg), nlsol.u, nlsol.resid;
+        nlsol.retcode, nlsol.stats, nlsol.left, nlsol.right, original = nlsol
+    )
+end
+
+function __solve_scc_steady_state(
+        prob::SciMLBase.SCCSteadyStateProblem, ::Nothing,
+        args...; kwargs...
+    )
+    nlsol = solve(SCCNonlinearProblem(prob), args...; kwargs...)
+    return SciMLBase.build_solution(
+        prob, nlsol.alg, nlsol.u, nlsol.resid;
+        nlsol.retcode, nlsol.stats, nlsol.left, nlsol.right, original = nlsol
+    )
+end
+
+function __solve_scc_steady_state(
+        prob::SciMLBase.SCCSteadyStateProblem, alg,
+        args...; kwargs...
+    )
+    nlsol = solve(SCCNonlinearProblem(prob), alg, args...; kwargs...)
+    return SciMLBase.build_solution(
+        prob, nlsol.alg, nlsol.u, nlsol.resid;
+        nlsol.retcode, nlsol.stats, nlsol.left, nlsol.right, original = nlsol
+    )
+end
+
+# Index provider for the saved-state layout of an `SCCSteadyStateProblem`:
+# `idxs` are the positions of the saved states in the full compressed layout.
+# Parameters and independent variables forward to the wrapped `sys`; observed
+# quantities are unavailable since they need the full state.
+struct SCCSavedStates{S}
+    sys::S
+    idxs::Vector{Int}
+end
+
+SymbolicIndexingInterface.symbolic_container(w::SCCSavedStates) = w.sys
+
+function SymbolicIndexingInterface.variable_index(w::SCCSavedStates, sym)
+    idx = variable_index(w.sys, sym)
+    idx === nothing && return nothing
+    if idx isa AbstractArray
+        out = map(i -> something(findfirst(==(i), w.idxs), 0), idx)
+        any(iszero, out) && return nothing
+        return out
+    end
+    return findfirst(==(idx), w.idxs)
+end
+
+function SymbolicIndexingInterface.is_variable(w::SCCSavedStates, sym)
+    return variable_index(w, sym) !== nothing
+end
+
+function SymbolicIndexingInterface.variable_symbols(w::SCCSavedStates)
+    return variable_symbols(w.sys)[w.idxs]
+end
+
+SymbolicIndexingInterface.all_variable_symbols(w::SCCSavedStates) =
+    variable_symbols(w)
+SymbolicIndexingInterface.is_observed(::SCCSavedStates, sym) = false
+
+function SymbolicIndexingInterface.all_symbols(w::SCCSavedStates)
+    return union(
+        variable_symbols(w), SymbolicIndexingInterface.parameter_symbols(w.sys),
+        SymbolicIndexingInterface.independent_variable_symbols(w.sys)
+    )
+end
+
+# A live view of an `SCCSteadyStateProblem` whose state layout is the
+# saved-state selection: `idxs` are the saved positions in `prob`'s compressed
+# layout. `state_values`, `solve` and `remake` all act in the saved layout;
+# the view shares the wrapped problem's blocks, parameters and index provider,
+# narrowed to the saved states through `SCCSavedStates`.
+struct SCCSavedProblem{
+        uType, P <: SciMLBase.SCCSteadyStateProblem, I, F,
+    } <: SciMLBase.AbstractSteadyStateProblem{uType, false}
+    prob::P
+    idxs::I
+    f::F
+end
+
+function SCCSavedProblem(prob::SciMLBase.SCCSteadyStateProblem, idxs)
+    f = if prob.f.sys === nothing
+        SciMLBase.NonlinearFunction{false}(Returns(nothing))
+    else
+        SciMLBase.NonlinearFunction{false}(
+            Returns(nothing); sys = SCCSavedStates(prob.f.sys, vec(collect(idxs)))
+        )
+    end
+    uType = state_values(prob) === nothing ? Nothing : typeof(state_values(prob)[idxs])
+    return SCCSavedProblem{uType, typeof(prob), typeof(idxs), typeof(f)}(
+        prob, idxs, f
+    )
+end
+
+__saved_positions(w::SCCSavedProblem) = w.idxs isa Integer ? (w.idxs,) : w.idxs
+
+function SymbolicIndexingInterface.state_values(w::SCCSavedProblem)
+    states = state_values(w.prob)
+    return states === nothing ? nothing : states[w.idxs]
+end
+SymbolicIndexingInterface.parameter_values(w::SCCSavedProblem) =
+    parameter_values(w.prob)
+SymbolicIndexingInterface.symbolic_container(w::SCCSavedProblem) = w.f
+function SymbolicIndexingInterface.set_state!(w::SCCSavedProblem, val, idx)
+    return set_state!(w.prob, val, __saved_positions(w)[idx])
+end
+function SymbolicIndexingInterface.set_parameter!(w::SCCSavedProblem, val, idx)
+    return set_parameter!(w.prob, val, idx)
+end
+function SymbolicIndexingInterface.finalize_parameters_hook!(w::SCCSavedProblem, sym)
+    return finalize_parameters_hook!(w.prob, sym)
+end
+
+function SciMLBase.solve(
+        w::SCCSavedProblem, args...; save_idxs = nothing, u0 = nothing, p = nothing,
+        kwargs...
+    )
+    if u0 !== nothing || p !== nothing
+        w = remake(w; u0 = u0 === nothing ? missing : u0, p = p === nothing ? missing : p)
+    end
+    composed = if save_idxs === nothing
+        w.idxs
+    else
+        __saved_positions(w)[__resolve_save_idxs(w, save_idxs)]
+    end
+    return solve(w.prob, args...; save_idxs = composed, kwargs...)
+end
+
+function SciMLBase.remake(
+        w::SCCSavedProblem; u0 = missing, p = missing, kwargs...
+    )
+    if u0 isa Number || (u0 isa AbstractArray && eltype(u0) <: Number)
+        old = state_values(w.prob)
+        T = promote_type(
+            old === nothing ? Union{} : eltype(old),
+            u0 isa Number ? typeof(u0) : eltype(u0)
+        )
+        full = if old === nothing
+            # A guess-less problem has no values at the unsaved positions;
+            # zeros match the guess `LinearSolve` uses when none is given.
+            zeros(T, sum(size(b.A, 2) for b in w.prob.probs))
+        else
+            copyto!(Vector{T}(undef, length(old)), old)
+        end
+        positions = collect(__saved_positions(w))
+        if u0 isa Number
+            full[positions] .= u0
+        else
+            full[positions] = u0
+        end
+        u0 = full
+    end
+    return SCCSavedProblem(remake(w.prob; u0, p, kwargs...), w.idxs)
+end
+
+# `save_idxs` is a selection in the compressed state layout: integers pass
+# through, symbolic entries are resolved through `prob`'s index provider and
+# must be states of it. A non-array `save_idxs` is a single entry and keeps the
+# scalar shape of `u`/`resid`, matching `DynamicSS` on a `SteadyStateProblem`.
+function __resolve_save_idxs(prob, save_idxs)
+    function resolve(s)
+        symbolic_type(s) === NotSymbolic() && return s
+        idx = variable_index(prob, s)
+        idx === nothing && throw(
+            ArgumentError("`save_idxs` entry $s is not a state of the problem")
+        )
+        return idx
+    end
+    return save_idxs isa AbstractArray ? map(resolve, save_idxs) : resolve(save_idxs)
+end
+
+function __scc_save_idxs(
+        prob::SciMLBase.SCCSteadyStateProblem, sol, save_idxs
+    )
+    save_idxs === nothing && return sol
+    idxs = __resolve_save_idxs(prob, save_idxs)
+    return SciMLBase.build_solution(
+        SCCSavedProblem(prob, idxs), sol.alg, sol.u[idxs], sol.resid[idxs];
+        retcode = sol.retcode, stats = sol.stats, left = sol.left,
+        right = sol.right, original = sol
+    )
+end
+
+# `SteadyStateProblem.lowered_problem` is a SciMLBase 3.x field; reads go
+# through `hasfield` so this package also loads where the field is gone.
+function __lowered_problem(prob)
+    return prob isa SteadyStateProblem && hasfield(typeof(prob), :lowered_problem) ?
+        prob.lowered_problem : nothing
+end
+
 # A `SteadyStateProblem` that records an `SCCNonlinearProblem` lowering is
 # solved block-sequentially in the lowering's ordering instead of one
 # monolithic integration. Returns `nothing` when there is no SCC lowering.
 function __solve_scc_lowering(
         prob, alg, args...; save_idxs = nothing, kwargs...
     )
-    lp = prob isa SteadyStateProblem ? prob.lowered_problem : nothing
+    lp = __lowered_problem(prob)
     lp === nothing && return nothing
     lp isa SciMLBase.AbstractSciMLProblem || (lp = lp(prob))
     lp isa SciMLBase.SCCNonlinearProblem || return nothing

@@ -2,8 +2,8 @@ using SciMLTesting, SteadyStateDiffEq, Test
 using JET
 
 const REEXPORTS = (
-    :NonlinearProblem, :NonlinearSolution, :ReturnCode, :SteadyStateProblem,
-    :SteadyStateSolution, :remake, :solve, :successful_retcode,
+    :NonlinearProblem, :NonlinearSolution, :ReturnCode, :SCCSteadyStateProblem,
+    :SteadyStateProblem, :SteadyStateSolution, :remake, :solve, :successful_retcode,
 )
 
 const QUALIFIED_PUBLIC_IGNORE = (
