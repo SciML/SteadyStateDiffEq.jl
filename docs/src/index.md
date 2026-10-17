@@ -48,6 +48,25 @@ prob = SteadyStateProblem((u, p, t) -> 1 .- u, [0.0])
 sol = solve(prob, SICNM(Rodas3d()))
 ```
 
+## Initialization with SCC lowerings
+
+For a `SteadyStateProblem` whose `lowered_problem` is an `SCCNonlinearProblem`,
+`init(prob, alg; kwargs...)` returns a deferred solve object. Initialization
+materializes a callable lowering once and records it along with the algorithm
+and options. Each `solve!` performs a fresh solve on that lowering, with the same
+algorithm and solution state ordering as `solve(prob, alg; kwargs...)`.
+This interface supports the default solver, `SSRootfind`, `DynamicSS`, and `SICNM`.
+
+The deferred object's `state_values` and `parameter_values` expose the original
+problem's initial state and parameters by reference. They remain initial data
+after `solve!`; they are not an iterate or a copy for editing. The object does not
+support `step!`, `reinit!`, or symbolic indexing. Read the returned solution for
+solved state values and symbolic indexing, including variables eliminated during
+lowering. Repeated solves allocate fresh solver caches and reuse the materialized
+lowering; call `init` on a remade problem to change the operating point.
+
+Problems without an SCC lowering use the regular nonlinear solver caches.
+
 ## API
 
 ```@docs
