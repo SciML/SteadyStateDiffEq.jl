@@ -2,8 +2,9 @@ using SteadyStateDiffEq, NonlinearSolve, OrdinaryDiffEq, Test
 using ModelingToolkit
 using ModelingToolkit: t_nounits as t, D_nounits as D
 using SCCNonlinearSolve: SCCAlg
+using NonlinearSolve.NonlinearSolveBase: AbsNormSafeTerminationMode
 using SciMLBase: HomotopyProblem, LinearProblem, NonlinearProblem, SCCNonlinearProblem,
-    SteadyStateSolution
+    SteadyStateSolution, step!
 
 function coupled_scc_problem(iip, use_vector)
     f = if iip
@@ -434,4 +435,104 @@ end
     @test sol[[a, b, x]] ≈ [1, 2, cbrt(3)] atol = 1.0e-8
     @test sol.prob isa SCCNonlinearProblem
     @test sol.original isa Tuple{SciMLBase.LinearSolution, NonlinearSolution}
+end
+
+# `solve!(init(prob, alg))` goes through the same steady-state finalization as
+# `solve(prob, alg)`: termination-condition retcodes, best-state selection,
+# `save_idxs`, and the sequential SCC solve of a stored lowering.
+@testset "init/solve! on DynamicSS/SICNM matches solve" begin
+    function test_matches_solve(prob, alg; kwargs...)
+        sol = solve!(init(prob, alg; kwargs...))
+        ref = solve(prob, alg; kwargs...)
+        @test sol isa NonlinearSolution
+        @test sol.retcode == ref.retcode
+        @test sol.u ≈ ref.u
+        @test sol.resid ≈ ref.resid
+        return sol
+    end
+
+    @testset "plain SteadyStateProblem, alg=$(nameof(typeof(alg)))" for alg in (
+            DynamicSS(Tsit5()), SICNM(Rodas5P()),
+        )
+        prob = SteadyStateProblem((u, p, t) -> [1, 2] .- u, [0.0, 0.0])
+        sol = test_matches_solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        @test successful_retcode(sol)
+        @test sol.u ≈ [1.0, 2.0] atol = 1.0e-6
+
+        sol = test_matches_solve(
+            prob, alg; save_idxs = [2], abstol = 1.0e-10, reltol = 1.0e-10
+        )
+        @test sol.u ≈ [2.0] atol = 1.0e-6
+
+        cache = init(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        step!(cache)
+        @test cache.integrator.t > 0
+        @test successful_retcode(solve!(cache))
+    end
+
+    @testset "finite-time nonconvergence, alg=$(nameof(typeof(alg)))" for alg in (
+            DynamicSS(Tsit5(); tspan = 1.0e-3), SICNM(Rodas5P(); tspan = 1.0e-3),
+        )
+        prob = SteadyStateProblem((u, p, t) -> [1, 2] .- u, [0.0, 0.0])
+        sol = test_matches_solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        @test !successful_retcode(sol)
+    end
+
+    @testset "protective termination" begin
+        # `u' = u` grows past the protective threshold.
+        prob = SteadyStateProblem((u, p, t) -> u, [1.0])
+        tc = AbsNormSafeTerminationMode(u -> maximum(abs, u); protective_threshold = 1.01)
+        sol = test_matches_solve(
+            prob, DynamicSS(Tsit5()); abstol = 1.0e-10, reltol = 1.0e-10,
+            termination_condition = tc
+        )
+        @test sol.retcode == ReturnCode.Unstable
+    end
+
+    @testset "manually-built SCC lowering, alg=$(nameof(typeof(alg)))" for (alg, shortalg) in (
+            (DynamicSS(Tsit5()), DynamicSS(Tsit5(); tspan = 1.0e-3)),
+            (SICNM(Rodas5P()), SICNM(Rodas5P(); tspan = 1.0e-3)),
+        )
+        sccprob = dynamicss_scc_problem(false, false)
+        prob = SteadyStateProblem(
+            (u, p, t) -> 1 .- u, [0.0, 0.0]; lowered_problem = sccprob
+        )
+        sol = test_matches_solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        @test successful_retcode(sol)
+        @test sol.u ≈ [1, 2, 1, 2] atol = 1.0e-8
+
+        sol = test_matches_solve(
+            prob, alg; save_idxs = [2, 4], abstol = 1.0e-10, reltol = 1.0e-10
+        )
+        @test sol.u ≈ [2, 2] atol = 1.0e-8
+
+        # The block cannot reach steady state within the short time span.
+        failing = SCCNonlinearProblem(
+            (NonlinearProblem((u, p) -> 1 .- u, [0.0]),), (Returns(nothing),)
+        )
+        prob = SteadyStateProblem(
+            (u, p, t) -> 1 .- u, [0.0]; lowered_problem = failing
+        )
+        sol = test_matches_solve(prob, shortalg; abstol = 1.0e-10, reltol = 1.0e-10)
+        @test !successful_retcode(sol)
+    end
+
+    @testset "ModelingToolkit SCC decomposition, alg=$(nameof(typeof(alg)))" for alg in (
+            DynamicSS(Tsit5()), SICNM(Rodas5P()),
+        )
+        @variables a(t) b(t) x(t) [irreducible = true]
+        @named model = System(
+            [D(a) ~ 5 - 3a - b, D(b) ~ 5 - a - 2b, D(x) ~ a + b - x^3], t
+        )
+        sys = mtkcompile(model)
+        prob = SteadyStateProblem(sys, [a => 0.8, b => 1.8, x => 0.8])
+
+        sol = test_matches_solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        @test successful_retcode(sol)
+        @test sol[[a, b, x]] ≈ [1, 2, cbrt(3)] atol = 1.0e-8
+
+        test_matches_solve(
+            prob, alg; save_idxs = [1], abstol = 1.0e-10, reltol = 1.0e-10
+        )
+    end
 end

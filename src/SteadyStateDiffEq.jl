@@ -10,7 +10,7 @@ using LinearSolve: LinearSolve
 using SciMLPublic: @public
 using SciMLBase: SciMLBase, CallbackSet, LinearProblem, NonlinearProblem, ODEProblem,
     NonlinearSolution, ReturnCode, SteadyStateProblem, SteadyStateSolution, get_du, init,
-    isinplace, remake, solve, successful_retcode
+    isinplace, remake, solve, solve!, step!, successful_retcode
 using SymbolicIndexingInterface: parameter_values
 
 const infnorm = Base.Fix2(norm, Inf)
