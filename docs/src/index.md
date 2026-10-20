@@ -64,6 +64,16 @@ extended continuous-Newton system, so its state is `[y; z]`: the first
 Newton direction `z`. Its intermediate states are therefore not states of `prob`;
 `solve!` returns only `y`.
 
+The cache supports symbolic state indexing (`cache[x]` and `getsym(cache, x)`),
+`state_values(cache)`, and `parameter_values(cache)` through
+SymbolicIndexingInterface. State access exposes the current steady-state variables,
+including only `y` for SICNM, even when `save_idxs` selects a subset in the solution.
+`SciMLBase.reinit!(cache, u0; p)` rebuilds the integrator and termination condition
+at the new operating point with the initialization options. SICNM recomputes the
+consistent Newton direction from `u0` and `p`. Keyword arguments override the
+initialization options; omitting `u0` or `p` uses the latest initial state or current
+parameters. Access `cache.integrator` after reinitialization to use the new integrator.
+
 When `prob` carries an `SCCNonlinearProblem` lowering, the blocks are solved one after
 another and there is no single integrator to step. `solve!` runs that sequential solve.
 
@@ -84,4 +94,5 @@ sol = solve!(cache)
 SSRootfind
 DynamicSS
 SICNM
+SciMLBase.reinit!(::SteadyStateDiffEq.SteadyStateODECache)
 ```

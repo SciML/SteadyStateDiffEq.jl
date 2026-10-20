@@ -170,12 +170,50 @@ function SciMLBase.solve!(cache::SteadyStateSCCCache)
     )
 end
 
-@concrete struct SteadyStateODECache
+@concrete mutable struct SteadyStateODECache
     prob
     alg
     integrator
     setup
     save_idxs
+    args
+    kwargs
+end
+
+SymbolicIndexingInterface.symbolic_container(cache::SteadyStateODECache) = cache.prob
+SymbolicIndexingInterface.current_time(cache::SteadyStateODECache) =
+    SymbolicIndexingInterface.current_time(cache.prob)
+SymbolicIndexingInterface.parameter_values(cache::SteadyStateODECache) =
+    parameter_values(cache.integrator)
+function SymbolicIndexingInterface.state_values(cache::SteadyStateODECache)
+    u = SymbolicIndexingInterface.state_values(cache.integrator)
+    return cache.alg isa SICNM ? view(u, 1:cache.setup.n) : u
+end
+Base.getindex(cache::SteadyStateODECache, sym) =
+    SymbolicIndexingInterface.getu(cache, sym)(cache)
+
+"""
+    SciMLBase.reinit!(cache::SteadyStateODECache, u0 = cache.prob.u0; p = parameter_values(cache), kwargs...)
+
+Reinitialize a non-SCC `DynamicSS` or `SICNM` cache at `u0` and `p`. Rebuild the
+integrator and termination condition using the initialization options, with
+overrides from `kwargs`. SICNM recomputes its consistent Newton direction.
+"""
+function SciMLBase.reinit!(
+        cache::SteadyStateODECache, u0 = cache.prob.u0;
+        p = parameter_values(cache), kwargs...
+    )
+    prob = remake(cache.prob; u0, p)
+    fresh = SciMLBase.__init(
+        prob, cache.alg, cache.args...; cache.kwargs..., save_idxs = cache.save_idxs,
+        kwargs...
+    )
+    cache.prob = fresh.prob
+    cache.integrator = fresh.integrator
+    cache.setup = fresh.setup
+    cache.save_idxs = fresh.save_idxs
+    cache.kwargs = fresh.kwargs
+    return cache
 end
 
 function SciMLBase.solve!(cache::SteadyStateODECache)
@@ -316,7 +354,10 @@ function SciMLBase.__init(
         setup.run_kwargs..., odesolve_kwargs..., setup.callback, save_end = true,
         alias = setup.odealias
     )
-    return SteadyStateODECache(prob, alg, integrator, setup, save_idxs)
+    return SteadyStateODECache(
+        prob, alg, integrator, setup, save_idxs, args,
+        (; abstol, reltol, odesolve_kwargs, termination_condition, alias, kwargs...)
+    )
 end
 
 # SICNM: Semi-Implicit Continuous Newton Method
@@ -531,7 +572,10 @@ function SciMLBase.__init(
         reltol = setup.ode_reltol, setup.run_kwargs..., odesolve_kwargs...,
         setup.callback, save_end = true
     )
-    return SteadyStateODECache(prob, alg, integrator, setup, save_idxs)
+    return SteadyStateODECache(
+        prob, alg, integrator, setup, save_idxs, args,
+        (; abstol, reltol, odesolve_kwargs, termination_condition, alias, kwargs...)
+    )
 end
 
 function __sicnm_result(tc_cache, odesol, n)
