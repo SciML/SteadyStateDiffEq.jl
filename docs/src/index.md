@@ -80,6 +80,10 @@ throws, the cache retains its state and options from before the call.
 
 When `prob` carries an `SCCNonlinearProblem` lowering, the blocks are solved one after
 another and there is no single integrator to step. `solve!` runs that sequential solve.
+`step!`, `reinit!`, and symbolic indexing are defined only on the integrator cache
+(`SteadyStateODECache`) described above; calling any of them on the SCC lowering's
+cache (`SteadyStateSCCCache`) throws `MethodError`, since only `solve!` is supported
+on it.
 
 ```julia
 using SciMLBase: SteadyStateProblem, init, solve!, step!
