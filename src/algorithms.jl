@@ -95,9 +95,11 @@ block solvers.
 A `SteadyStateProblem` that records a `lowered_problem` (for example the SCC
 decomposition stored by `ModelingToolkit`) is solved through that lowering. When
 the problem has symbolic information and the lowering resolves all its unknowns,
-`sol.prob` is the original problem, `sol.u` follows the shape, container type and
-ordering of `prob.u0`, and `sol.resid` is evaluated using the original residual at
-`(sol.u, prob.p, Inf)`. `sol.original` retains the lowering's solution. If this
+`sol.prob` is the original problem, and `sol.u` follows the shape and ordering of
+`prob.u0`. Mapped values are converted to `eltype(prob.u0)`; array storage follows
+`map` on `prob.u0`, so view-backed initial states produce independent arrays.
+`sol.resid` is evaluated using the original residual at `(sol.u, prob.p, Inf)`.
+`sol.original` retains the lowering's solution. If this
 symbolic mapping is unavailable, the solution uses the lowered problem and its
 state ordering. `SSRootfind` does not select output components with `save_idxs`.
 
@@ -157,9 +159,11 @@ that records an `SCCNonlinearProblem` as its `lowered_problem` (for example one
 built by `ModelingToolkit`) takes the same sequential solve.
 
 When the original problem has symbolic information and the lowering resolves all
-its unknowns, `sol.prob` is the original problem, `sol.u` follows the shape,
-container type and ordering of `prob.u0`, and `sol.resid` is evaluated using the
-original residual at `(sol.u, prob.p, Inf)`. `sol.original` retains the SCC solution.
+its unknowns, `sol.prob` is the original problem, and `sol.u` follows the shape
+and ordering of `prob.u0`. Mapped values are converted to `eltype(prob.u0)`; array
+storage follows `map` on `prob.u0`, so view-backed initial states produce
+independent arrays. `sol.resid` is evaluated using the original residual at
+`(sol.u, prob.p, Inf)`. `sol.original` retains the SCC solution.
 If this symbolic mapping is unavailable, the solution uses the lowered problem and
 its state ordering. `save_idxs` selects components of the returned state and
 residual in that ordering, with the full unsliced solution kept as `sol.original`.
@@ -268,9 +272,11 @@ system. A `SteadyStateProblem` that records an `SCCNonlinearProblem` as its
 sequential solve.
 
 When the original problem has symbolic information and the lowering resolves all
-its unknowns, `sol.prob` is the original problem, `sol.u` follows the shape,
-container type and ordering of `prob.u0`, and `sol.resid` is evaluated using the
-original residual at `(sol.u, prob.p, Inf)`. `sol.original` retains the SCC solution.
+its unknowns, `sol.prob` is the original problem, and `sol.u` follows the shape
+and ordering of `prob.u0`. Mapped values are converted to `eltype(prob.u0)`; array
+storage follows `map` on `prob.u0`, so view-backed initial states produce
+independent arrays. `sol.resid` is evaluated using the original residual at
+`(sol.u, prob.p, Inf)`. `sol.original` retains the SCC solution.
 If this symbolic mapping is unavailable, the solution uses the lowered problem and
 its state ordering. `save_idxs` selects components of the returned state and
 residual in that ordering, with the full unsliced solution kept as `sol.original`.

@@ -137,7 +137,10 @@ function __scc_solution_on_problem(prob::SteadyStateProblem, alg, sccsol)
     u = if prob.u0 isa Number
         convert(typeof(prob.u0), only(u))
     else
-        convert(typeof(prob.u0), reshape(collect(u), size(prob.u0)))
+        map(
+            (_, value) -> convert(eltype(prob.u0), value),
+            prob.u0, reshape(collect(u), size(prob.u0))
+        )
     end
     resid = if isinplace(prob)
         du = similar(u)

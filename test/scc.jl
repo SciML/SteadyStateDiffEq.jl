@@ -701,11 +701,11 @@ end
         end
     end
 
-    @testset "shape=$shape iip=$iip alg=$(nameof(typeof(alg)))" for shape in (
+    @testset "shape=$shape iip=$iip view=$use_view alg=$(nameof(typeof(alg)))" for shape in (
                 (1, 2), (2, 1), (2, 2), (2, 1, 2),
             ), iip in (false, true), alg in (
                 SSRootfind(NewtonRaphson()), DynamicSS(Tsit5()), SICNM(Rodas5P()),
-            )
+            ), use_view in (false, true)
         n = prod(shape)
         syms = [Symbol(:x, i) for i in 1:n]
         sys = SymbolCache(syms)
@@ -722,17 +722,32 @@ end
         lp = SCCNonlinearProblem(
             (NonlinearProblem(nf, zeros(n)),), (Returns(nothing),); sys = lower_sys
         )
-        prob = SteadyStateProblem(f, zeros(shape), 3.0; lowered_problem = lp)
+        backing = zeros(2 .* shape)
+        u0 = use_view ? view(backing, map(n -> 1:n, shape)...) : zeros(shape)
+        prob = SteadyStateProblem(f, u0, 3.0; lowered_problem = lp)
         sol = solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
         @test successful_retcode(sol)
-        @test sol.u isa typeof(prob.u0)
-        @test sol.resid isa typeof(prob.u0)
+        if use_view
+            @test sol.u isa typeof(similar(prob.u0))
+            @test sol.resid isa typeof(similar(prob.u0))
+            @test !Base.mightalias(sol.u, prob.u0)
+            @test !Base.mightalias(sol.resid, prob.u0)
+        else
+            @test sol.u isa typeof(prob.u0)
+            @test sol.resid isa typeof(prob.u0)
+        end
         @test size(sol.u) == shape
         @test sol.u ≈ target atol = 1.0e-8
         @test sol[syms] ≈ vec(target) atol = 1.0e-8
         @test sol.resid == 3 .* (target .- sol.u)
         @test sol.original.u ≈ reverse(vec(target)) atol = 1.0e-8
         @test prob.u0 == zeros(shape)
+        if use_view
+            sol.u[1] = -100.0
+            @test prob.u0 == zeros(shape)
+            @test backing == zeros(size(backing))
+            @test sol.original.u ≈ reverse(vec(target)) atol = 1.0e-8
+        end
 
         if !(alg isa SSRootfind)
             idxs = [n, 1]
@@ -742,7 +757,12 @@ end
             sliced = solve!(cache)
             @test sliced.u ≈ vec(target)[idxs] atol = 1.0e-8
             @test sliced.resid == sliced.original.resid[idxs]
-            @test sliced.original.u isa typeof(prob.u0)
+            if use_view
+                @test sliced.original.u isa typeof(similar(prob.u0))
+                @test !Base.mightalias(sliced.original.u, prob.u0)
+            else
+                @test sliced.original.u isa typeof(prob.u0)
+            end
             @test sliced.original.u ≈ target atol = 1.0e-8
             @test sliced.original.original.u ≈ reverse(vec(target)) atol = 1.0e-8
             sliced.original.u[1] = -100.0
@@ -750,6 +770,11 @@ end
             @test again.original.u ≈ target atol = 1.0e-8
             @test again.u ≈ vec(target)[idxs] atol = 1.0e-8
             @test prob.u0 == zeros(shape)
+            if use_view
+                @test !Base.mightalias(again.original.u, sliced.original.u)
+                @test !Base.mightalias(again.original.u, prob.u0)
+                @test backing == zeros(size(backing))
+            end
         end
     end
 end
