@@ -73,6 +73,10 @@ at the new operating point with the initialization options. SICNM recomputes the
 consistent Newton direction from `u0` and `p`. Keyword arguments override the
 initialization options; omitting `u0` or `p` uses the latest initial state or current
 parameters. Access `cache.integrator` after reinitialization to use the new integrator.
+Overrides can add or remove `save_idxs`, introduce ODE options such as `dt`, or
+change the termination mode. Reinitialization returns the same cache object and
+replaces its state after the new setup initializes successfully. If rebuilding
+throws, the cache retains its state and options from before the call.
 
 When `prob` carries an `SCCNonlinearProblem` lowering, the blocks are solved one after
 another and there is no single integrator to step. `solve!` runs that sequential solve.

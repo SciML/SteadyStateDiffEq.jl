@@ -170,14 +170,26 @@ function SciMLBase.solve!(cache::SteadyStateSCCCache)
     )
 end
 
-@concrete mutable struct SteadyStateODECache
-    prob
-    alg
-    integrator
-    setup
-    save_idxs
-    args
-    kwargs
+mutable struct SteadyStateODECache{A, Args}
+    state::Any
+    alg::A
+    args::Args
+end
+
+function SteadyStateODECache(prob, alg, integrator, setup, save_idxs, args, kwargs)
+    return SteadyStateODECache((; prob, integrator, setup, save_idxs, kwargs), alg, args)
+end
+
+function Base.getproperty(cache::SteadyStateODECache, name::Symbol)
+    if name === :state || name === :alg || name === :args
+        return getfield(cache, name)
+    end
+    return getproperty(getfield(cache, :state), name)
+end
+
+function Base.propertynames(::SteadyStateODECache, private::Bool = false)
+    names = (:prob, :alg, :integrator, :setup, :save_idxs, :args, :kwargs)
+    return private ? (names..., :state) : names
 end
 
 SymbolicIndexingInterface.symbolic_container(cache::SteadyStateODECache) = cache.prob
@@ -186,8 +198,9 @@ SymbolicIndexingInterface.current_time(cache::SteadyStateODECache) =
 SymbolicIndexingInterface.parameter_values(cache::SteadyStateODECache) =
     parameter_values(cache.integrator)
 function SymbolicIndexingInterface.state_values(cache::SteadyStateODECache)
-    u = SymbolicIndexingInterface.state_values(cache.integrator)
-    return cache.alg isa SICNM ? view(u, 1:cache.setup.n) : u
+    state = cache.state
+    u = SymbolicIndexingInterface.state_values(state.integrator)
+    return cache.alg isa SICNM ? view(u, 1:state.setup.n) : u
 end
 Base.getindex(cache::SteadyStateODECache, sym) =
     SymbolicIndexingInterface.getu(cache, sym)(cache)
@@ -197,29 +210,29 @@ Base.getindex(cache::SteadyStateODECache, sym) =
 
 Reinitialize a non-SCC `DynamicSS` or `SICNM` cache at `u0` and `p`. Rebuild the
 integrator and termination condition using the initialization options, with
-overrides from `kwargs`. SICNM recomputes its consistent Newton direction.
+overrides from `kwargs`, including changes to option types. SICNM recomputes its
+consistent Newton direction. Return the same cache object. Replace its state only
+after the new setup initializes successfully; a failed rebuild retains its state.
 """
 function SciMLBase.reinit!(
         cache::SteadyStateODECache, u0 = cache.prob.u0;
         p = parameter_values(cache), kwargs...
     )
-    prob = remake(cache.prob; u0, p)
+    state = cache.state
+    prob = remake(state.prob; u0, p)
     fresh = SciMLBase.__init(
-        prob, cache.alg, cache.args...; cache.kwargs..., save_idxs = cache.save_idxs,
+        prob, cache.alg, cache.args...; state.kwargs..., save_idxs = state.save_idxs,
         kwargs...
     )
-    cache.prob = fresh.prob
-    cache.integrator = fresh.integrator
-    cache.setup = fresh.setup
-    cache.save_idxs = fresh.save_idxs
-    cache.kwargs = fresh.kwargs
+    cache.state = fresh.state
     return cache
 end
 
 function SciMLBase.solve!(cache::SteadyStateODECache)
-    odesol = solve!(cache.integrator)
+    state = cache.state
+    odesol = solve!(state.integrator)
     return __steady_state_solution(
-        cache.prob, cache.alg, cache.setup, odesol, cache.save_idxs
+        state.prob, cache.alg, state.setup, odesol, state.save_idxs
     )
 end
 
