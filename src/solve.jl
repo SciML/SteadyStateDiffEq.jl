@@ -133,6 +133,8 @@ function __scc_solution_on_problem(prob::SteadyStateProblem, alg, sccsol)
     syms = variable_symbols(prob)
     length(syms) == length(prob.u0) || return nothing
     all(s -> is_variable(sccsol, s) || is_observed(sccsol, s), syms) || return nothing
+    state_indices = LinearIndices(axes(prob.u0))
+    syms = sort(syms; by = s -> state_indices[variable_index(prob, s)])
     u = getsym(sccsol, syms)(sccsol)
     u = if prob.u0 isa Number
         convert(typeof(prob.u0), only(u))

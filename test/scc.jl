@@ -2,7 +2,8 @@ using SteadyStateDiffEq, NonlinearSolve, OrdinaryDiffEq, Test
 using ModelingToolkit
 using ModelingToolkit: t_nounits as t, D_nounits as D
 using SCCNonlinearSolve: SCCAlg
-using SymbolicIndexingInterface: SymbolCache, getsym, variable_index
+import SymbolicIndexingInterface
+using SymbolicIndexingInterface: SymbolCache, getsym, variable_index, variable_symbols
 using NonlinearSolve.NonlinearSolveBase: AbsNormSafeTerminationMode
 using SciMLBase: HomotopyProblem, LinearProblem, NonlinearProblem, SCCNonlinearProblem,
     SteadyStateSolution, step!
@@ -775,6 +776,80 @@ end
                 @test !Base.mightalias(again.original.u, prob.u0)
                 @test backing == zeros(size(backing))
             end
+        end
+    end
+end
+
+
+struct EnumeratedState{S, V}
+    cache::S
+    symbols::V
+end
+SymbolicIndexingInterface.symbolic_container(sys::EnumeratedState) = sys.cache
+SymbolicIndexingInterface.variable_symbols(sys::EnumeratedState) = sys.symbols
+
+@testset "SCC reconstruction uses original variable indices" begin
+    permutations = ([1, 2, 3], [1, 3, 2], [2, 1, 3], [2, 3, 1], [3, 1, 2], [3, 2, 1])
+    @testset "enumeration=$enumeration lowering=$lowering shape=$shape cartesian=$cartesian view=$use_view iip=$iip alg=$(nameof(typeof(alg)))" for enumeration in permutations,
+            lowering in permutations, shape in ((3,), (1, 3), (3, 1, 1)),
+            cartesian in (false, true), use_view in (false, true), iip in (false, true),
+            alg in (SSRootfind(NewtonRaphson()), DynamicSS(Tsit5()), SICNM(Rodas5P()))
+        syms = [:x, :y, :z]
+        target = reshape([2.0, 3.0, 5.0], shape)
+        indices = cartesian ? vec(collect(CartesianIndices(target))) : collect(1:3)
+        sys = EnumeratedState(SymbolCache(Dict(zip(syms, indices))), syms[enumeration])
+        f = if iip
+            SciMLBase.ODEFunction{true}((du, u, p, t) -> (du .= 3 .* (target .- u)); sys)
+        else
+            SciMLBase.ODEFunction{false}((u, p, t) -> 3 .* (target .- u); sys)
+        end
+        lower_sys = SymbolCache(syms[lowering])
+        lower_target = [2.0, 3.0, 5.0][lowering]
+        nf = SciMLBase.NonlinearFunction{false}((u, p) -> lower_target .- u; sys = lower_sys)
+        lp = SCCNonlinearProblem(
+            (NonlinearProblem(nf, zeros(3)),), (Returns(nothing),); sys = lower_sys
+        )
+        backing = zeros(2 .* shape)
+        u0 = use_view ? view(backing, map(n -> (2 * n):-2:1, shape)...) : zeros(shape)
+        prob = SteadyStateProblem(f, u0; lowered_problem = lp)
+        @test variable_symbols(prob) == syms[enumeration]
+        @test variable_index.((prob,), syms) == indices
+        sol = solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        @test successful_retcode(sol)
+        @test size(sol.u) == shape
+        @test sol.u ≈ target atol = 1.0e-8
+        @test sol[syms] ≈ [2.0, 3.0, 5.0] atol = 1.0e-8
+        @test sol.resid == 3 .* (target .- sol.u)
+        @test maximum(abs, sol.resid) < 1.0e-8
+        @test sol.original.u ≈ lower_target atol = 1.0e-8
+        @test !Base.mightalias(sol.u, prob.u0)
+        @test !Base.mightalias(sol.resid, prob.u0)
+        sol.u[1] = -100.0
+        @test prob.u0 == zeros(shape)
+        @test backing == zeros(size(backing))
+        @test sol.original.u ≈ lower_target atol = 1.0e-8
+        if !(alg isa SSRootfind)
+            cache = init(prob, alg; save_idxs = [3, 1], abstol = 1.0e-10, reltol = 1.0e-10)
+            sliced = solve!(cache)
+            @test successful_retcode(sliced)
+            @test sliced.u ≈ [5.0, 2.0] atol = 1.0e-8
+            @test sliced.resid == sliced.original.resid[[3, 1]]
+            @test size(sliced.original.u) == shape
+            @test sliced.original.u ≈ target atol = 1.0e-8
+            @test sliced.original[syms] ≈ [2.0, 3.0, 5.0] atol = 1.0e-8
+            @test sliced.original.resid == 3 .* (target .- sliced.original.u)
+            @test maximum(abs, sliced.original.resid) < 1.0e-8
+            @test sliced.original.original.u ≈ lower_target atol = 1.0e-8
+            @test !Base.mightalias(sliced.original.u, prob.u0)
+            sliced.original.u[1] = -200.0
+            again = solve!(cache)
+            @test successful_retcode(again)
+            @test again.original.u ≈ target atol = 1.0e-8
+            @test again.u ≈ [5.0, 2.0] atol = 1.0e-8
+            @test !Base.mightalias(again.original.u, sliced.original.u)
+            @test !Base.mightalias(again.original.u, prob.u0)
+            @test prob.u0 == zeros(shape)
+            @test backing == zeros(size(backing))
         end
     end
 end
