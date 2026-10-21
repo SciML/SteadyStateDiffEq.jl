@@ -24,7 +24,7 @@ DiffEqCallbacks = "4.16.0"
 ForwardDiff = "1.0.1"
 LinearAlgebra = "1.10"
 LinearSolve = "5.4"
-ModelingToolkit = "11.44"
+ModelingToolkit = "11.45"
 NonlinearSolve = "4.12"
 NonlinearSolveBase = "2.40"
 OrdinaryDiffEq = "7"
@@ -48,7 +48,8 @@ SafeTestsets = "1bc83da4-3b8d-516f-aca4-4fe02f6d838f"
 SCCNonlinearSolve = "9dfe8606-65a1-4bb3-9748-cb89d1561431"
 SciMLTesting = "09d9d899-5365-40a9-917a-5f67fddea283"
 Sundials = "c3572dad-4567-51f8-b174-8c6c989267f4"
+SymbolicIndexingInterface = "2efcf032-c050-4f8e-a9bb-153293bab1f5"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Symbolics", "OrdinaryDiffEq", "NonlinearSolve", "ModelingToolkit", "SciMLTesting", "Test", "SafeTestsets", "Sundials", "SCCNonlinearSolve"]
+test = ["Symbolics", "OrdinaryDiffEq", "NonlinearSolve", "ModelingToolkit", "SciMLTesting", "Test", "SafeTestsets", "Sundials", "SCCNonlinearSolve", "SymbolicIndexingInterface"]

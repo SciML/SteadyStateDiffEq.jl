@@ -2,8 +2,11 @@ using SteadyStateDiffEq, NonlinearSolve, OrdinaryDiffEq, Test
 using ModelingToolkit
 using ModelingToolkit: t_nounits as t, D_nounits as D
 using SCCNonlinearSolve: SCCAlg
+import SymbolicIndexingInterface
+using SymbolicIndexingInterface: SymbolCache, getsym, variable_index, variable_symbols
+using NonlinearSolve.NonlinearSolveBase: AbsNormSafeTerminationMode
 using SciMLBase: HomotopyProblem, LinearProblem, NonlinearProblem, SCCNonlinearProblem,
-    SteadyStateSolution
+    SteadyStateSolution, step!
 
 function coupled_scc_problem(iip, use_vector)
     f = if iip
@@ -392,13 +395,14 @@ end
     @test prob.lowered_problem !== nothing
 
     # The `SSRootfind` solve happens on the `SCCNonlinearProblem` lowering, and
-    # `sol` is expressed on it.
+    # `sol` is mapped back onto `prob`.
     sol = solve(
         prob, SSRootfind(NewtonRaphson()); abstol = 1.0e-12, reltol = 1.0e-12
     )
     @test successful_retcode(sol)
     @test sol[states] ≈ expected atol = 1.0e-9
-    @test sol.prob isa SCCNonlinearProblem
+    @test sol.prob isa SteadyStateProblem
+    @test sol.original.prob isa SCCNonlinearProblem
 end
 
 @testset "DynamicSS on a SteadyStateProblem with an SCC lowering" begin
@@ -415,8 +419,10 @@ end
     sol = solve(prob, DynamicSS(); abstol = 1.0e-10, reltol = 1.0e-10)
     @test successful_retcode(sol)
     @test sol[[a, b, x]] ≈ [1, 2, cbrt(3)] atol = 1.0e-8
-    @test sol.prob isa SCCNonlinearProblem
-    @test sol.original isa Tuple{SciMLBase.LinearSolution, NonlinearSolution}
+    @test sol.prob isa SteadyStateProblem
+    @test length(sol.u) == length(prob.u0)
+    @test sol.original.prob isa SCCNonlinearProblem
+    @test sol.original.original isa Tuple{SciMLBase.LinearSolution, NonlinearSolution}
 end
 
 @testset "SICNM on a SteadyStateProblem with an SCC lowering" begin
@@ -432,6 +438,418 @@ end
     sol = solve(prob, SICNM(Rodas5P()); abstol = 1.0e-10, reltol = 1.0e-10)
     @test successful_retcode(sol)
     @test sol[[a, b, x]] ≈ [1, 2, cbrt(3)] atol = 1.0e-8
-    @test sol.prob isa SCCNonlinearProblem
-    @test sol.original isa Tuple{SciMLBase.LinearSolution, NonlinearSolution}
+    @test sol.prob isa SteadyStateProblem
+    @test length(sol.u) == length(prob.u0)
+    @test sol.original.prob isa SCCNonlinearProblem
+    @test sol.original.original isa Tuple{SciMLBase.LinearSolution, NonlinearSolution}
+end
+
+# `solve!(init(prob, alg))` goes through the same steady-state finalization as
+# `solve(prob, alg)`: termination-condition retcodes, best-state selection,
+# `save_idxs`, and the sequential SCC solve of a stored lowering.
+@testset "init/solve! on DynamicSS/SICNM matches solve" begin
+    function test_matches_solve(prob, alg; kwargs...)
+        sol = solve!(init(prob, alg; kwargs...))
+        ref = solve(prob, alg; kwargs...)
+        @test sol isa NonlinearSolution
+        @test sol.retcode == ref.retcode
+        @test sol.u ≈ ref.u
+        @test sol.resid ≈ ref.resid
+        return sol
+    end
+
+    @testset "plain SteadyStateProblem, alg=$(nameof(typeof(alg)))" for alg in (
+            DynamicSS(Tsit5()), SICNM(Rodas5P()),
+        )
+        prob = SteadyStateProblem((u, p, t) -> [1, 2] .- u, [0.0, 0.0])
+        sol = test_matches_solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        @test successful_retcode(sol)
+        @test sol.u ≈ [1.0, 2.0] atol = 1.0e-6
+
+        sol = test_matches_solve(
+            prob, alg; save_idxs = [2], abstol = 1.0e-10, reltol = 1.0e-10
+        )
+        @test sol.u ≈ [2.0] atol = 1.0e-6
+
+        cache = init(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        step!(cache)
+        @test cache.integrator.t > 0
+        @test successful_retcode(solve!(cache))
+    end
+
+    @testset "finite-time nonconvergence, alg=$(nameof(typeof(alg)))" for alg in (
+            DynamicSS(Tsit5(); tspan = 1.0e-3), SICNM(Rodas5P(); tspan = 1.0e-3),
+        )
+        prob = SteadyStateProblem((u, p, t) -> [1, 2] .- u, [0.0, 0.0])
+        sol = test_matches_solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        @test !successful_retcode(sol)
+    end
+
+    @testset "protective termination" begin
+        # `u' = u` grows past the protective threshold.
+        prob = SteadyStateProblem((u, p, t) -> u, [1.0])
+        tc = AbsNormSafeTerminationMode(u -> maximum(abs, u); protective_threshold = 1.01)
+        sol = test_matches_solve(
+            prob, DynamicSS(Tsit5()); abstol = 1.0e-10, reltol = 1.0e-10,
+            termination_condition = tc
+        )
+        @test sol.retcode == ReturnCode.Unstable
+    end
+
+    @testset "manually-built SCC lowering, alg=$(nameof(typeof(alg)))" for (alg, shortalg) in (
+            (DynamicSS(Tsit5()), DynamicSS(Tsit5(); tspan = 1.0e-3)),
+            (SICNM(Rodas5P()), SICNM(Rodas5P(); tspan = 1.0e-3)),
+        )
+        sccprob = dynamicss_scc_problem(false, false)
+        prob = SteadyStateProblem(
+            (u, p, t) -> 1 .- u, [0.0, 0.0]; lowered_problem = sccprob
+        )
+        sol = test_matches_solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        @test successful_retcode(sol)
+        @test sol.u ≈ [1, 2, 1, 2] atol = 1.0e-8
+
+        sol = test_matches_solve(
+            prob, alg; save_idxs = [2, 4], abstol = 1.0e-10, reltol = 1.0e-10
+        )
+        @test sol.u ≈ [2, 2] atol = 1.0e-8
+
+        # The block cannot reach steady state within the short time span.
+        failing = SCCNonlinearProblem(
+            (NonlinearProblem((u, p) -> 1 .- u, [0.0]),), (Returns(nothing),)
+        )
+        prob = SteadyStateProblem(
+            (u, p, t) -> 1 .- u, [0.0]; lowered_problem = failing
+        )
+        sol = test_matches_solve(prob, shortalg; abstol = 1.0e-10, reltol = 1.0e-10)
+        @test !successful_retcode(sol)
+    end
+
+    @testset "ModelingToolkit SCC decomposition, alg=$(nameof(typeof(alg)))" for alg in (
+            DynamicSS(Tsit5()), SICNM(Rodas5P()),
+        )
+        @variables a(t) b(t) x(t) [irreducible = true]
+        @named model = System(
+            [D(a) ~ 5 - 3a - b, D(b) ~ 5 - a - 2b, D(x) ~ a + b - x^3], t
+        )
+        sys = mtkcompile(model)
+        prob = SteadyStateProblem(sys, [a => 0.8, b => 1.8, x => 0.8])
+
+        sol = test_matches_solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        @test successful_retcode(sol)
+        @test sol[[a, b, x]] ≈ [1, 2, cbrt(3)] atol = 1.0e-8
+        @test sol.prob isa SteadyStateProblem
+        @test sol.original.prob isa SCCNonlinearProblem
+
+        test_matches_solve(
+            prob, alg; save_idxs = [1], abstol = 1.0e-10, reltol = 1.0e-10
+        )
+    end
+end
+
+# The SCC lowering is compiled from the residual system separately, so for a
+# system that was only `complete`d its state can be shorter than `prob.u0` (here
+# `mtkcompile` eliminates one of the two unknowns of the linear residual). The
+# solution is mapped back onto `prob`'s own state ordering.
+@testset "SCC-lowered solution is expressed in the problem's state, alg=$(nameof(typeof(alg)))" for alg in (
+        DynamicSS(Tsit5()), SICNM(Rodas5P()), SSRootfind(NewtonRaphson()),
+    )
+    @parameters kp kd k1 k2
+    @variables X(t) Y(t) XY(t)
+    osys = complete(
+        System(
+            [D(X) ~ kp - kd * X - k1 * X + k2 * Y, D(Y) ~ 1 + k1 * X - k2 * Y - Y], t;
+            observed = [XY ~ X + Y], name = :osys
+        )
+    )
+    p = [kp => 1.0, kd => 0.1, k1 => 0.25, k2 => 0.5]
+    prob = SteadyStateProblem(osys, [X => 4.0, Y => 5.0, p...])
+    @test length(SCCNonlinearProblem(prob).f.sys |> unknowns) < length(prob.u0)
+
+    # kp - kd X - k1 X + k2 Y = 0 and 1 + k1 X - k2 Y - Y = 0
+    Xss, Yss = [0.35 -0.5; -0.25 1.5] \ [1.0, 1.0]
+    sol = solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+    @test successful_retcode(sol)
+    @test sol.prob isa SteadyStateProblem
+    @test length(sol.u) == length(prob.u0)
+    uidxs = variable_index.((osys,), [X, Y])
+    @test sol.u[uidxs] ≈ [Xss, Yss] atol = 1.0e-8
+    @test getsym(osys, [X, Y])(sol) ≈ [Xss, Yss] atol = 1.0e-8
+    @test sol[XY] ≈ Xss + Yss atol = 1.0e-8
+    @test sol.resid ≈ zeros(2) atol = 1.0e-7
+
+    if !(alg isa SSRootfind)
+        sol = solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10, save_idxs = uidxs[2:2])
+        @test sol.u ≈ [Yss] atol = 1.0e-8
+
+        sol = solve!(init(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10))
+        @test sol.prob isa SteadyStateProblem
+        @test sol.u[uidxs] ≈ [Xss, Yss] atol = 1.0e-8
+    end
+end
+
+@testset "SCC-lowered solution metadata" begin
+    # The lowering solves `x` to an integer literal, so it is observed with an
+    # `Int` value; the mapped state must keep `prob.u0`'s type.
+    @variables x(t)
+    csys = complete(System([D(x) ~ 1 - x], t; name = :csys))
+    prob = SteadyStateProblem(csys, [x => 0.2])
+    # `Broyden` needs no Jacobian, which the oldest supported NonlinearSolve
+    # stack cannot form for the zero-length lowering.
+    @testset "eltype, alg=$(nameof(typeof(alg)))" for alg in (
+            SSRootfind(Broyden()), DynamicSS(Tsit5()), SICNM(Rodas5P()),
+        )
+        sol = solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        @test sol.prob isa SteadyStateProblem
+        @test sol.u isa typeof(prob.u0)
+        @test sol.resid isa typeof(prob.u0)
+        @test sol.u ≈ [1.0]
+    end
+
+    # Lotka–Volterra lowers to a plain `NonlinearProblem` whose unknowns are in
+    # a different order than the problem's.
+    @parameters α = 1.5 β = 1.0 γ = 3.0 δ = 1.0
+    @variables u(t) v(t)
+    lv = mtkcompile(
+        System([D(u) ~ α * u - β * u * v, D(v) ~ -γ * v + δ * u * v], t; name = :lv)
+    )
+    lvprob = SteadyStateProblem(lv, [u => 2.9, v => 1.6])
+    sol = solve(lvprob, SSRootfind(NewtonRaphson()); abstol = 1.0e-12, reltol = 1.0e-12)
+    @test sol.prob isa SteadyStateProblem
+    @test sol[[u, v]] ≈ [3.0, 1.5] atol = 1.0e-8
+    @test sol.stats !== nothing
+    @test sol.stats === sol.original.stats
+    @test sol.left === sol.original.left
+    @test sol.right === sol.original.right
+
+    @testset "save_idxs keeps the unsliced solution as original" begin
+        sccprob = SCCNonlinearProblem(
+            (
+                NonlinearProblem((u, p) -> [1.0 - u[1]], [0.0]),
+                NonlinearProblem((u, p) -> [2.0 - u[1]], [0.0]),
+            ),
+            (Returns(nothing), Returns(nothing))
+        )
+        manual = SteadyStateProblem(
+            (u, p, t) -> 1 .- u, [0.0, 0.0]; lowered_problem = sccprob
+        )
+        sliced = solve(
+            manual, DynamicSS(Tsit5()); save_idxs = [2], abstol = 1.0e-10, reltol = 1.0e-10
+        )
+        @test sliced.u ≈ [2.0] atol = 1.0e-8
+        @test sliced.original.prob === sccprob
+        @test sliced.original.u ≈ [1.0, 2.0] atol = 1.0e-8
+
+        @parameters kp kd k1 k2
+        @variables X(t) Y(t)
+        osys = complete(
+            System(
+                [D(X) ~ kp - kd * X - k1 * X + k2 * Y, D(Y) ~ 1 + k1 * X - k2 * Y - Y], t;
+                name = :osys2
+            )
+        )
+        sprob = SteadyStateProblem(
+            osys, [X => 4.0, Y => 5.0, kp => 1.0, kd => 0.1, k1 => 0.25, k2 => 0.5]
+        )
+        Xss, Yss = [0.35 -0.5; -0.25 1.5] \ [1.0, 1.0]
+        uidxs = variable_index.((osys,), [X, Y])
+        sliced = solve(
+            sprob, DynamicSS(Tsit5()); save_idxs = uidxs[2:2],
+            abstol = 1.0e-10, reltol = 1.0e-10
+        )
+        @test sliced.u ≈ [Yss] atol = 1.0e-8
+        @test sliced.original.prob isa SteadyStateProblem
+        @test sliced.original.u[uidxs] ≈ [Xss, Yss] atol = 1.0e-8
+    end
+end
+
+@testset "SCC-lowered solution preserves state containers" begin
+    @testset "scalar alg=$(nameof(typeof(alg)))" for alg in (
+            SSRootfind(NewtonRaphson()), DynamicSS(Tsit5()), SICNM(Rodas5P()),
+        )
+        sys = SymbolCache([:x])
+        f = SciMLBase.ODEFunction{false}((u, p, t) -> p * (2 - u); sys)
+        nf = SciMLBase.NonlinearFunction{false}((u, p) -> [4 - u[1]^2]; sys)
+        nlprob = NonlinearProblem(nf, [0.5])
+        lp = alg isa SSRootfind ? nlprob : SCCNonlinearProblem(
+                (nlprob,), (Returns(nothing),); sys
+            )
+        prob = SteadyStateProblem(f, 0.5, 3.0; lowered_problem = lp)
+        @testset "maxiters=$maxiters" for maxiters in (1, 1000)
+            sol = solve(prob, alg; maxiters, abstol = 1.0e-10, reltol = 1.0e-10)
+            @test sol.u isa Float64
+            @test sol.resid isa Float64
+            @test sol.resid == 3 * (2 - sol.u)
+            @test sol.original.u isa Vector{Float64}
+            @test prob.u0 == 0.5
+            if maxiters == 1000
+                @test successful_retcode(sol)
+                @test sol.u ≈ 2.0
+                @test sol[:x] ≈ 2.0
+                if !(alg isa SSRootfind)
+                    sliced = solve!(
+                        init(
+                            prob, alg; save_idxs = 1, abstol = 1.0e-10, reltol = 1.0e-10
+                        )
+                    )
+                    @test sliced.u ≈ 2.0
+                    @test sliced.resid == 3 * (2 - sliced.u)
+                    @test sliced.original.u isa Float64
+                end
+            else
+                @test !successful_retcode(sol)
+                @test abs(sol.resid) > 1.0
+            end
+        end
+    end
+
+    @testset "shape=$shape iip=$iip view=$use_view alg=$(nameof(typeof(alg)))" for shape in (
+                (1, 2), (2, 1), (2, 2), (2, 1, 2),
+            ), iip in (false, true), alg in (
+                SSRootfind(NewtonRaphson()), DynamicSS(Tsit5()), SICNM(Rodas5P()),
+            ), use_view in (false, true)
+        n = prod(shape)
+        syms = [Symbol(:x, i) for i in 1:n]
+        sys = SymbolCache(syms)
+        target = reshape(collect(2.0:(n + 1)), shape)
+        f = if iip
+            SciMLBase.ODEFunction{true}((du, u, p, t) -> (du .= p .* (target .- u)); sys)
+        else
+            SciMLBase.ODEFunction{false}((u, p, t) -> p .* (target .- u); sys)
+        end
+        lower_sys = SymbolCache(reverse(syms))
+        nf = SciMLBase.NonlinearFunction{false}(
+            (u, p) -> reverse(vec(target)) .- u; sys = lower_sys
+        )
+        lp = SCCNonlinearProblem(
+            (NonlinearProblem(nf, zeros(n)),), (Returns(nothing),); sys = lower_sys
+        )
+        backing = zeros(2 .* shape)
+        u0 = use_view ? view(backing, map(n -> 1:n, shape)...) : zeros(shape)
+        prob = SteadyStateProblem(f, u0, 3.0; lowered_problem = lp)
+        sol = solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        @test successful_retcode(sol)
+        if use_view
+            @test sol.u isa typeof(similar(prob.u0))
+            @test sol.resid isa typeof(similar(prob.u0))
+            @test !Base.mightalias(sol.u, prob.u0)
+            @test !Base.mightalias(sol.resid, prob.u0)
+        else
+            @test sol.u isa typeof(prob.u0)
+            @test sol.resid isa typeof(prob.u0)
+        end
+        @test size(sol.u) == shape
+        @test sol.u ≈ target atol = 1.0e-8
+        @test sol[syms] ≈ vec(target) atol = 1.0e-8
+        @test sol.resid == 3 .* (target .- sol.u)
+        @test sol.original.u ≈ reverse(vec(target)) atol = 1.0e-8
+        @test prob.u0 == zeros(shape)
+        if use_view
+            sol.u[1] = -100.0
+            @test prob.u0 == zeros(shape)
+            @test backing == zeros(size(backing))
+            @test sol.original.u ≈ reverse(vec(target)) atol = 1.0e-8
+        end
+
+        if !(alg isa SSRootfind)
+            idxs = [n, 1]
+            cache = init(
+                prob, alg; save_idxs = idxs, abstol = 1.0e-10, reltol = 1.0e-10
+            )
+            sliced = solve!(cache)
+            @test sliced.u ≈ vec(target)[idxs] atol = 1.0e-8
+            @test sliced.resid == sliced.original.resid[idxs]
+            if use_view
+                @test sliced.original.u isa typeof(similar(prob.u0))
+                @test !Base.mightalias(sliced.original.u, prob.u0)
+            else
+                @test sliced.original.u isa typeof(prob.u0)
+            end
+            @test sliced.original.u ≈ target atol = 1.0e-8
+            @test sliced.original.original.u ≈ reverse(vec(target)) atol = 1.0e-8
+            sliced.original.u[1] = -100.0
+            again = solve!(cache)
+            @test again.original.u ≈ target atol = 1.0e-8
+            @test again.u ≈ vec(target)[idxs] atol = 1.0e-8
+            @test prob.u0 == zeros(shape)
+            if use_view
+                @test !Base.mightalias(again.original.u, sliced.original.u)
+                @test !Base.mightalias(again.original.u, prob.u0)
+                @test backing == zeros(size(backing))
+            end
+        end
+    end
+end
+
+
+struct EnumeratedState{S, V}
+    cache::S
+    symbols::V
+end
+SymbolicIndexingInterface.symbolic_container(sys::EnumeratedState) = sys.cache
+SymbolicIndexingInterface.variable_symbols(sys::EnumeratedState) = sys.symbols
+
+@testset "SCC reconstruction uses original variable indices" begin
+    permutations = ([1, 2, 3], [1, 3, 2], [2, 1, 3], [2, 3, 1], [3, 1, 2], [3, 2, 1])
+    @testset "enumeration=$enumeration lowering=$lowering shape=$shape cartesian=$cartesian view=$use_view iip=$iip alg=$(nameof(typeof(alg)))" for enumeration in permutations,
+            lowering in permutations, shape in ((3,), (1, 3), (3, 1, 1)),
+            cartesian in (false, true), use_view in (false, true), iip in (false, true),
+            alg in (SSRootfind(NewtonRaphson()), DynamicSS(Tsit5()), SICNM(Rodas5P()))
+        syms = [:x, :y, :z]
+        target = reshape([2.0, 3.0, 5.0], shape)
+        indices = cartesian ? vec(collect(CartesianIndices(target))) : collect(1:3)
+        sys = EnumeratedState(SymbolCache(Dict(zip(syms, indices))), syms[enumeration])
+        f = if iip
+            SciMLBase.ODEFunction{true}((du, u, p, t) -> (du .= 3 .* (target .- u)); sys)
+        else
+            SciMLBase.ODEFunction{false}((u, p, t) -> 3 .* (target .- u); sys)
+        end
+        lower_sys = SymbolCache(syms[lowering])
+        lower_target = [2.0, 3.0, 5.0][lowering]
+        nf = SciMLBase.NonlinearFunction{false}((u, p) -> lower_target .- u; sys = lower_sys)
+        lp = SCCNonlinearProblem(
+            (NonlinearProblem(nf, zeros(3)),), (Returns(nothing),); sys = lower_sys
+        )
+        backing = zeros(2 .* shape)
+        u0 = use_view ? view(backing, map(n -> (2 * n):-2:1, shape)...) : zeros(shape)
+        prob = SteadyStateProblem(f, u0; lowered_problem = lp)
+        @test variable_symbols(prob) == syms[enumeration]
+        @test variable_index.((prob,), syms) == indices
+        sol = solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        @test successful_retcode(sol)
+        @test size(sol.u) == shape
+        @test sol.u ≈ target atol = 1.0e-8
+        @test sol[syms] ≈ [2.0, 3.0, 5.0] atol = 1.0e-8
+        @test sol.resid == 3 .* (target .- sol.u)
+        @test maximum(abs, sol.resid) < 1.0e-8
+        @test sol.original.u ≈ lower_target atol = 1.0e-8
+        @test !Base.mightalias(sol.u, prob.u0)
+        @test !Base.mightalias(sol.resid, prob.u0)
+        sol.u[1] = -100.0
+        @test prob.u0 == zeros(shape)
+        @test backing == zeros(size(backing))
+        @test sol.original.u ≈ lower_target atol = 1.0e-8
+        if !(alg isa SSRootfind)
+            cache = init(prob, alg; save_idxs = [3, 1], abstol = 1.0e-10, reltol = 1.0e-10)
+            sliced = solve!(cache)
+            @test successful_retcode(sliced)
+            @test sliced.u ≈ [5.0, 2.0] atol = 1.0e-8
+            @test sliced.resid == sliced.original.resid[[3, 1]]
+            @test size(sliced.original.u) == shape
+            @test sliced.original.u ≈ target atol = 1.0e-8
+            @test sliced.original[syms] ≈ [2.0, 3.0, 5.0] atol = 1.0e-8
+            @test sliced.original.resid == 3 .* (target .- sliced.original.u)
+            @test maximum(abs, sliced.original.resid) < 1.0e-8
+            @test sliced.original.original.u ≈ lower_target atol = 1.0e-8
+            @test !Base.mightalias(sliced.original.u, prob.u0)
+            sliced.original.u[1] = -200.0
+            again = solve!(cache)
+            @test successful_retcode(again)
+            @test again.original.u ≈ target atol = 1.0e-8
+            @test again.u ≈ [5.0, 2.0] atol = 1.0e-8
+            @test !Base.mightalias(again.original.u, sliced.original.u)
+            @test !Base.mightalias(again.original.u, prob.u0)
+            @test prob.u0 == zeros(shape)
+            @test backing == zeros(size(backing))
+        end
+    end
 end
