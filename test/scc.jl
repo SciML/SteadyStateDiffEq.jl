@@ -2,7 +2,7 @@ using SteadyStateDiffEq, NonlinearSolve, OrdinaryDiffEq, Test
 using ModelingToolkit
 using ModelingToolkit: t_nounits as t, D_nounits as D
 using SCCNonlinearSolve: SCCAlg
-using SymbolicIndexingInterface: getsym, variable_index
+using SymbolicIndexingInterface: SymbolCache, getsym, variable_index
 using NonlinearSolve.NonlinearSolveBase: AbsNormSafeTerminationMode
 using SciMLBase: HomotopyProblem, LinearProblem, NonlinearProblem, SCCNonlinearProblem,
     SteadyStateSolution, step!
@@ -658,5 +658,98 @@ end
         @test sliced.u ≈ [Yss] atol = 1.0e-8
         @test sliced.original.prob isa SteadyStateProblem
         @test sliced.original.u[uidxs] ≈ [Xss, Yss] atol = 1.0e-8
+    end
+end
+
+@testset "SCC-lowered solution preserves state containers" begin
+    @testset "scalar alg=$(nameof(typeof(alg)))" for alg in (
+            SSRootfind(NewtonRaphson()), DynamicSS(Tsit5()), SICNM(Rodas5P()),
+        )
+        sys = SymbolCache([:x])
+        f = SciMLBase.ODEFunction{false}((u, p, t) -> p * (2 - u); sys)
+        nf = SciMLBase.NonlinearFunction{false}((u, p) -> [4 - u[1]^2]; sys)
+        nlprob = NonlinearProblem(nf, [0.5])
+        lp = alg isa SSRootfind ? nlprob : SCCNonlinearProblem(
+                (nlprob,), (Returns(nothing),); sys
+            )
+        prob = SteadyStateProblem(f, 0.5, 3.0; lowered_problem = lp)
+        @testset "maxiters=$maxiters" for maxiters in (1, 1000)
+            sol = solve(prob, alg; maxiters, abstol = 1.0e-10, reltol = 1.0e-10)
+            @test sol.u isa Float64
+            @test sol.resid isa Float64
+            @test sol.resid == 3 * (2 - sol.u)
+            @test sol.original.u isa Vector{Float64}
+            @test prob.u0 == 0.5
+            if maxiters == 1000
+                @test successful_retcode(sol)
+                @test sol.u ≈ 2.0
+                @test sol[:x] ≈ 2.0
+                if !(alg isa SSRootfind)
+                    sliced = solve!(
+                        init(
+                            prob, alg; save_idxs = 1, abstol = 1.0e-10, reltol = 1.0e-10
+                        )
+                    )
+                    @test sliced.u ≈ 2.0
+                    @test sliced.resid == 3 * (2 - sliced.u)
+                    @test sliced.original.u isa Float64
+                end
+            else
+                @test !successful_retcode(sol)
+                @test abs(sol.resid) > 1.0
+            end
+        end
+    end
+
+    @testset "shape=$shape iip=$iip alg=$(nameof(typeof(alg)))" for shape in (
+                (1, 2), (2, 1), (2, 2), (2, 1, 2),
+            ), iip in (false, true), alg in (
+                SSRootfind(NewtonRaphson()), DynamicSS(Tsit5()), SICNM(Rodas5P()),
+            )
+        n = prod(shape)
+        syms = [Symbol(:x, i) for i in 1:n]
+        sys = SymbolCache(syms)
+        target = reshape(collect(2.0:(n + 1)), shape)
+        f = if iip
+            SciMLBase.ODEFunction{true}((du, u, p, t) -> (du .= p .* (target .- u)); sys)
+        else
+            SciMLBase.ODEFunction{false}((u, p, t) -> p .* (target .- u); sys)
+        end
+        lower_sys = SymbolCache(reverse(syms))
+        nf = SciMLBase.NonlinearFunction{false}(
+            (u, p) -> reverse(vec(target)) .- u; sys = lower_sys
+        )
+        lp = SCCNonlinearProblem(
+            (NonlinearProblem(nf, zeros(n)),), (Returns(nothing),); sys = lower_sys
+        )
+        prob = SteadyStateProblem(f, zeros(shape), 3.0; lowered_problem = lp)
+        sol = solve(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+        @test successful_retcode(sol)
+        @test sol.u isa typeof(prob.u0)
+        @test sol.resid isa typeof(prob.u0)
+        @test size(sol.u) == shape
+        @test sol.u ≈ target atol = 1.0e-8
+        @test sol[syms] ≈ vec(target) atol = 1.0e-8
+        @test sol.resid == 3 .* (target .- sol.u)
+        @test sol.original.u ≈ reverse(vec(target)) atol = 1.0e-8
+        @test prob.u0 == zeros(shape)
+
+        if !(alg isa SSRootfind)
+            idxs = [n, 1]
+            cache = init(
+                prob, alg; save_idxs = idxs, abstol = 1.0e-10, reltol = 1.0e-10
+            )
+            sliced = solve!(cache)
+            @test sliced.u ≈ vec(target)[idxs] atol = 1.0e-8
+            @test sliced.resid == sliced.original.resid[idxs]
+            @test sliced.original.u isa typeof(prob.u0)
+            @test sliced.original.u ≈ target atol = 1.0e-8
+            @test sliced.original.original.u ≈ reverse(vec(target)) atol = 1.0e-8
+            sliced.original.u[1] = -100.0
+            again = solve!(cache)
+            @test again.original.u ≈ target atol = 1.0e-8
+            @test again.u ≈ vec(target)[idxs] atol = 1.0e-8
+            @test prob.u0 == zeros(shape)
+        end
     end
 end

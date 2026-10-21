@@ -134,7 +134,11 @@ function __scc_solution_on_problem(prob::SteadyStateProblem, alg, sccsol)
     length(syms) == length(prob.u0) || return nothing
     all(s -> is_variable(sccsol, s) || is_observed(sccsol, s), syms) || return nothing
     u = getsym(sccsol, syms)(sccsol)
-    u = convert(typeof(prob.u0), collect(u))
+    u = if prob.u0 isa Number
+        convert(typeof(prob.u0), only(u))
+    else
+        convert(typeof(prob.u0), reshape(collect(u), size(prob.u0)))
+    end
     resid = if isinplace(prob)
         du = similar(u)
         prob.f(du, u, prob.p, Inf)
