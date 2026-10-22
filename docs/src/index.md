@@ -64,10 +64,14 @@ extended continuous-Newton system, so its state is `[y; z]`: the first
 Newton direction `z`. Its intermediate states are therefore not states of `prob`;
 `solve!` returns only `y`.
 
-The cache supports symbolic state indexing (`cache[x]` and `getsym(cache, x)`),
-`state_values(cache)`, and `parameter_values(cache)` through
-SymbolicIndexingInterface. State access exposes the current steady-state variables,
-including only `y` for SICNM, even when `save_idxs` selects a subset in the solution.
+The cache supports symbolic state indexing (`cache[x]`, `cache[x] = value`, and
+`getsym(cache, x)`), the parameter proxy `cache.ps` (`cache.ps[a]` and
+`cache.ps[a] = value`), `state_values(cache)`, and `parameter_values(cache)`
+through SymbolicIndexingInterface. State access exposes the current steady-state
+variables, including only `y` for SICNM, even when `save_idxs` selects a subset
+in the solution. Assigning through `cache[x]` or `cache.ps[a]` marks the
+integrator modified; SICNM recomputes a consistent Newton direction
+`z = -J(y)⁻¹ g(y)` from the updated state and parameters.
 `SciMLBase.reinit!(cache, u0; p)` rebuilds the integrator and termination condition
 at the new operating point with the initialization options. SICNM recomputes the
 consistent Newton direction from `u0` and `p`. Keyword arguments override the

@@ -94,4 +94,43 @@ end
         SciMLBase.reinit!(cache; save_idxs = [1])
         @test solve!(cache).u ≈ [6.0] atol = 1.0e-8
     end
+
+    @testset "symbolic parameter proxy and state assignment" begin
+        @testset "$(nameof(typeof(alg))), iip=$iip" for alg in (
+                    DynamicSS(Tsit5()), SICNM(Rodas5P()),
+                ), iip in (false, true)
+
+            sys = SymbolCache([:x], [:a])
+            f = iip ? ((du, u, p, t) -> (du .= p[1] .- u)) : ((u, p, t) -> p[1] .- u)
+            prob = SteadyStateProblem(ODEFunction{iip}(f; sys), [0.0], [2.0])
+            cache = init(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+            @test :ps in propertynames(cache)
+            @test cache.ps[:a] == 2.0
+            @test cache[:x] == 0.0
+            cache.ps[:a] = 6.0
+            @test cache.ps[:a] == 6.0
+            @test parameter_values(cache) == [6.0]
+            cache[:x] = 1.0
+            @test cache[:x] == 1.0
+            @test state_values(cache) == [1.0]
+            if alg isa SICNM
+                @test cache.integrator.u ≈ [1.0, 5.0]
+            end
+            step!(cache)
+            sol = solve!(cache)
+            @test successful_retcode(sol)
+            @test sol.u ≈ [6.0] atol = 1.0e-8
+            @test cache[:x] ≈ 6.0 atol = 1.0e-8
+            @test cache.ps[:a] == 6.0
+
+            cache2 = init(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+            cache2.ps[:a] = 8.0
+            cache2[:x] = -1.0
+            sol2 = solve!(cache2)
+            @test successful_retcode(sol2)
+            @test sol2.u ≈ [8.0] atol = 1.0e-8
+            @test cache2[:x] ≈ 8.0 atol = 1.0e-8
+            @test cache2.ps[:a] == 8.0
+        end
+    end
 end

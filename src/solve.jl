@@ -183,12 +183,14 @@ end
 function Base.getproperty(cache::SteadyStateODECache, name::Symbol)
     if name === :state || name === :alg || name === :args
         return getfield(cache, name)
+    elseif name === :ps
+        return SymbolicIndexingInterface.ParameterIndexingProxy(cache)
     end
     return getproperty(getfield(cache, :state), name)
 end
 
 function Base.propertynames(::SteadyStateODECache, private::Bool = false)
-    names = (:prob, :alg, :integrator, :setup, :save_idxs, :args, :kwargs)
+    names = (:prob, :alg, :integrator, :setup, :save_idxs, :args, :kwargs, :ps)
     return private ? (names..., :state) : names
 end
 
@@ -204,6 +206,66 @@ function SymbolicIndexingInterface.state_values(cache::SteadyStateODECache)
 end
 Base.getindex(cache::SteadyStateODECache, sym) =
     SymbolicIndexingInterface.getu(cache, sym)(cache)
+function Base.setindex!(cache::SteadyStateODECache, value, sym)
+    result = SymbolicIndexingInterface.setu(cache, sym)(cache, value)
+    SciMLBase.derivative_discontinuity!(cache.state.integrator, true)
+    return result
+end
+function SymbolicIndexingInterface.set_state!(cache::SteadyStateODECache, val, idx)
+    state_values(cache)[idx] = val
+    __after_steady_state_mutation!(cache)
+    return val
+end
+function SymbolicIndexingInterface.finalize_parameters_hook!(cache::SteadyStateODECache, _)
+    return __after_steady_state_mutation!(cache)
+end
+
+function __after_steady_state_mutation!(cache::SteadyStateODECache)
+    SciMLBase.derivative_discontinuity!(cache.state.integrator, true)
+    cache.alg isa SICNM && __sicnm_refresh_direction!(cache)
+    return nothing
+end
+
+function __sicnm_residual_and_direction(g, y, p, linsolve, iip)
+    if iip
+        gval = similar(y)
+        g(gval, y, p)
+        J = ForwardDiff.jacobian((res, y_) -> g(res, y_, p), similar(gval), y)
+    else
+        gval = g(y, p)
+        J = ForwardDiff.jacobian(y_ -> g(y_, p), y)
+    end
+    return gval, solve(LinearProblem(J, -gval), linsolve).u
+end
+
+function __sicnm_refresh_direction!(cache::SteadyStateODECache)
+    state = cache.state
+    setup = state.setup
+    integrator = state.integrator
+    y = state_values(cache)
+    p = parameter_values(integrator)
+    _, z = __sicnm_residual_and_direction(setup.g, y, p, cache.alg.linsolve, setup.iip)
+    u = SymbolicIndexingInterface.state_values(integrator)
+    copyto!(view(u, (setup.n + 1):(2 * setup.n)), z)
+    return nothing
+end
+
+function __integrator_modified(integrator)
+    T = typeof(integrator)
+    if hasfield(T, :derivative_discontinuity)
+        return getfield(integrator, :derivative_discontinuity)
+    elseif hasfield(T, :u_modified)
+        return getfield(integrator, :u_modified)
+    else
+        return false
+    end
+end
+
+function __sicnm_sync_modified!(cache::SteadyStateODECache)
+    cache.alg isa SICNM || return nothing
+    __integrator_modified(cache.state.integrator) && __sicnm_refresh_direction!(cache)
+    return nothing
+end
 
 """
     SciMLBase.reinit!(cache::SteadyStateODECache, u0 = cache.prob.u0; p = parameter_values(cache), kwargs...)
@@ -229,6 +291,7 @@ function SciMLBase.reinit!(
 end
 
 function SciMLBase.solve!(cache::SteadyStateODECache)
+    __sicnm_sync_modified!(cache)
     state = cache.state
     odesol = solve!(state.integrator)
     return __steady_state_solution(
@@ -236,7 +299,10 @@ function SciMLBase.solve!(cache::SteadyStateODECache)
     )
 end
 
-SciMLBase.step!(cache::SteadyStateODECache, args...) = step!(cache.integrator, args...)
+function SciMLBase.step!(cache::SteadyStateODECache, args...)
+    __sicnm_sync_modified!(cache)
+    return step!(cache.integrator, args...)
+end
 
 __get_tspan(u0, alg::Union{DynamicSS, SICNM}) = __get_tspan(u0, alg.tspan)
 __get_tspan(u0, tspan::Tuple) = tspan
@@ -417,32 +483,24 @@ function __sicnm_ode_setup(
     t0 = first(tspan)
 
     g = if prob isa SteadyStateProblem
-        iip ? ((res, y) -> prob.f(res, y, p, t0)) : (y -> prob.f(y, p, t0))
+        iip ? ((res, y, p_) -> prob.f(res, y, p_, t0)) : ((y, p_) -> prob.f(y, p_, t0))
     elseif prob isa SciMLBase.HomotopyProblem
         # The `λ = λspan[2]` end of the homotopy is the actual system.
         λ1 = last(prob.λspan)
         fnl = NonlinearSolveBase.get_raw_f(SciMLBase.unwrapped_f(prob.f.f))
-        iip ? ((res, y) -> fnl(res, y, p, λ1)) : (y -> fnl(y, p, λ1))
+        iip ? ((res, y, p_) -> fnl(res, y, p_, λ1)) : ((y, p_) -> fnl(y, p_, λ1))
     elseif prob isa NonlinearProblem
         # AutoSpecialize wraps `prob.f` in FunctionWrappers compiled only for the
         # standard solver dual types, which cannot accept the SICNM JVP duals, so
         # unwrap down to the raw user function
         fnl = NonlinearSolveBase.get_raw_f(SciMLBase.unwrapped_f(prob.f.f))
-        iip ? ((res, y) -> fnl(res, y, p)) : (y -> fnl(y, p))
+        iip ? ((res, y, p_) -> fnl(res, y, p_)) : ((y, p_) -> fnl(y, p_))
     end
 
     # consistent initialization: z₀ = -J(y₀)⁻¹ g(y₀), solved with LinearSolve.jl
     y0 = float.(prob.u0)
     n = length(y0)
-    if iip
-        g0 = similar(y0)
-        g(g0, y0)
-        J0 = ForwardDiff.jacobian((res, y) -> g(res, y), similar(g0), y0)
-    else
-        g0 = g(y0)
-        J0 = ForwardDiff.jacobian(g, y0)
-    end
-    z0 = solve(LinearProblem(J0, -g0), alg.linsolve).u
+    g0, z0 = __sicnm_residual_and_direction(g, y0, p, alg.linsolve, iip)
     u0 = vcat(y0, z0)
     T = eltype(u0)
 
@@ -455,7 +513,7 @@ function __sicnm_ode_setup(
             copyto!(view(du, 1:n), z)
             gval = similar(u, n)
             jvp = view(du, (n + 1):(2n))
-            __sicnm_g_and_jvp!(gval, jvp, g, y, z)
+            __sicnm_g_and_jvp!(gval, jvp, (res, y_) -> g(res, y_, p_), y, z)
             jvp .+= gval
             return nothing
         end
@@ -463,7 +521,7 @@ function __sicnm_ode_setup(
         (u, p_, t) -> begin
             y = view(u, 1:n)
             z = view(u, (n + 1):(2n))
-            gval, jvp = __sicnm_g_and_jvp(g, y, z)
+            gval, jvp = __sicnm_g_and_jvp(y_ -> g(y_, p_), y, z)
             return vcat(z, jvp .+ gval)
         end
     end
@@ -476,11 +534,12 @@ function __sicnm_ode_setup(
     gbuf = iip ? similar(g0) : nothing
     function terminate_function(u, t, integrator)
         y = view(u, 1:n)
+        pcur = parameter_values(integrator)
         gval = if iip
-            g(gbuf, y)
+            g(gbuf, y, pcur)
             gbuf
         else
-            g(y)
+            g(y, pcur)
         end
         return tc_cache(gval, y, view(integrator.uprev, 1:n), t)
     end
@@ -544,11 +603,12 @@ end
 
 function __steady_state_solution(prob, alg::SICNM, setup, odesol, save_idxs)
     u, retcode = __sicnm_result(setup.tc_cache, odesol, setup.n)
+    p = parameter_values(odesol)
     resid = if setup.iip
-        setup.g(setup.gbuf, u)
+        setup.g(setup.gbuf, u, p)
         setup.gbuf
     else
-        setup.g(u)
+        setup.g(u, p)
     end
 
     if save_idxs !== nothing
