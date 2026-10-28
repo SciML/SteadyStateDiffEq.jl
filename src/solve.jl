@@ -270,21 +270,23 @@ end
 """
     SciMLBase.reinit!(cache::SteadyStateODECache, u0 = cache.prob.u0; p = parameter_values(cache), kwargs...)
 
-Reinitialize a non-SCC `DynamicSS` or `SICNM` cache at `u0` and `p`. Rebuild the
-integrator and termination condition using the initialization options, with
-overrides from `kwargs`, including changes to option types. SICNM recomputes its
-consistent Newton direction. Return the same cache object. Replace its state only
-after the new setup initializes successfully; a failed rebuild retains its state.
+Reinitialize a non-SCC `DynamicSS` or `SICNM` cache at `u0` and `p`; `u0` may also be
+given as the `u0` keyword. Rebuild the integrator and termination condition using the
+initialization options, with overrides from `kwargs`, including changes to option
+types. SICNM recomputes its consistent Newton direction. Return the same cache object.
+Replace its state only after the new setup initializes successfully; a failed rebuild
+retains its state.
 """
 function SciMLBase.reinit!(
-        cache::SteadyStateODECache, u0 = cache.prob.u0;
+        cache::SteadyStateODECache, u0 = nothing;
         p = parameter_values(cache), kwargs...
     )
     state = cache.state
+    u0 === nothing && (u0 = get(kwargs, :u0, state.prob.u0))
     prob = remake(state.prob; u0, p)
     fresh = SciMLBase.__init(
         prob, cache.alg, cache.args...; state.kwargs..., save_idxs = state.save_idxs,
-        kwargs...
+        __without_keys(kwargs, :u0)...
     )
     cache.state = fresh.state
     return cache
@@ -312,9 +314,15 @@ function __get_tspan(u0, tspan::Number)
     )
 end
 
-function __without_verbose(kwargs)
-    return (; (name => value for (name, value) in pairs(kwargs) if name !== :verbose)...)
+function __without_keys(kwargs, keys...)
+    return (;
+        (
+            name => value for (name, value) in pairs(kwargs) if !(name in keys)
+        )...,
+    )
 end
+
+__without_verbose(kwargs) = __without_keys(kwargs, :verbose)
 
 # Shared `DynamicSS` setup for `__solve` and `__init`: the ODE problem integrating
 # `prob`'s residual to steady state and its termination callback. SCC lowerings are

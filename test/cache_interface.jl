@@ -76,6 +76,38 @@ end
             @test prob.p == [4.0, 2.0]
         end
     end
+
+    @testset "keyword u0 cache reset" begin
+        @testset "$(nameof(typeof(alg))), iip=$iip" for alg in (
+                    DynamicSS(Tsit5()), SICNM(Rodas5P()),
+                ), iip in (false, true)
+
+            f = iip ? ((du, u, p, t) -> (du .= p .- u)) : ((u, p, t) -> p .- u)
+            prob = SteadyStateProblem(ODEFunction{iip}(f), [0.0], [2.0])
+            cache = init(prob, alg; abstol = 1.0e-10, reltol = 1.0e-10)
+            @test SciMLBase.reinit!(cache; u0 = [-3.0], p = [4.0]) === cache
+            @test state_values(cache) == [-3.0]
+            @test parameter_values(cache) == [4.0]
+            @test cache.prob.u0 == [-3.0]
+            @test cache.prob.p == [4.0]
+            @test !haskey(cache.kwargs, :u0)
+            if alg isa SICNM
+                @test cache.integrator.u ≈ [-3.0, 7.0]
+            end
+            @test solve!(cache).u ≈ [4.0] atol = 1.0e-8
+            @test SciMLBase.reinit!(cache, [7.0]; p = [8.0]) === cache
+            @test state_values(cache) == [7.0]
+            @test parameter_values(cache) == [8.0]
+            @test !haskey(cache.kwargs, :u0)
+            @test solve!(cache).u ≈ [8.0] atol = 1.0e-8
+            @test SciMLBase.reinit!(cache; u0 = [-1.0]) === cache
+            @test state_values(cache) == [-1.0]
+            @test parameter_values(cache) == [8.0]
+            @test solve!(cache).u ≈ [8.0] atol = 1.0e-8
+            @test prob.u0 == [0.0]
+            @test prob.p == [2.0]
+        end
+    end
     @testset "cache state with solution slicing" for alg in (DynamicSS(Tsit5()), SICNM(Rodas5P()))
         sys = SymbolCache([:x, :y], [:a, :b])
         prob = SteadyStateProblem(ODEFunction((u, p, t) -> p .- u; sys), zeros(2), [2.0, 3.0])

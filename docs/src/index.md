@@ -73,7 +73,8 @@ in the solution. Assigning through `cache[x]` or `cache.ps[a]` marks the
 integrator modified; SICNM recomputes a consistent Newton direction
 `z = -J(y)⁻¹ g(y)` from the updated state and parameters.
 `SciMLBase.reinit!(cache, u0; p)` rebuilds the integrator and termination condition
-at the new operating point with the initialization options. SICNM recomputes the
+at the new operating point with the initialization options; `u0` may also be given
+as the `u0` keyword. SICNM recomputes the
 consistent Newton direction from `u0` and `p`. Keyword arguments override the
 initialization options; omitting `u0` or `p` uses the latest initial state or current
 parameters. Access `cache.integrator` after reinitialization to use the new integrator.
