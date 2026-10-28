@@ -174,45 +174,49 @@ mutable struct SteadyStateODECache{A, Args}
     state::Any
     alg::A
     args::Args
+    direction_dirty::Bool
 end
 
 function SteadyStateODECache(prob, alg, integrator, setup, save_idxs, args, kwargs)
-    return SteadyStateODECache((; prob, integrator, setup, save_idxs, kwargs), alg, args)
+    return SteadyStateODECache((; prob, integrator, setup, save_idxs, kwargs), alg, args, false)
 end
 
 function Base.getproperty(cache::SteadyStateODECache, name::Symbol)
-    if name === :state || name === :alg || name === :args
+    if name === :state || name === :alg || name === :args || name === :direction_dirty
         return getfield(cache, name)
     elseif name === :ps
         return SymbolicIndexingInterface.ParameterIndexingProxy(cache)
+    elseif name === :integrator
+        __sicnm_sync_modified!(cache)
     end
     return getproperty(getfield(cache, :state), name)
 end
 
 function Base.propertynames(::SteadyStateODECache, private::Bool = false)
     names = (:prob, :alg, :integrator, :setup, :save_idxs, :args, :kwargs, :ps)
-    return private ? (names..., :state) : names
+    return private ? (names..., :state, :direction_dirty) : names
 end
 
 SymbolicIndexingInterface.symbolic_container(cache::SteadyStateODECache) = cache.prob
 SymbolicIndexingInterface.current_time(cache::SteadyStateODECache) =
     SymbolicIndexingInterface.current_time(cache.prob)
 SymbolicIndexingInterface.parameter_values(cache::SteadyStateODECache) =
-    parameter_values(cache.integrator)
+    parameter_values(cache.state.integrator)
 function SymbolicIndexingInterface.state_values(cache::SteadyStateODECache)
+    __sicnm_sync_modified!(cache)
     state = cache.state
     u = SymbolicIndexingInterface.state_values(state.integrator)
     return cache.alg isa SICNM ? view(u, 1:state.setup.n) : u
 end
 Base.getindex(cache::SteadyStateODECache, sym) =
     SymbolicIndexingInterface.getu(cache, sym)(cache)
-function Base.setindex!(cache::SteadyStateODECache, value, sym)
-    result = SymbolicIndexingInterface.setu(cache, sym)(cache, value)
-    SciMLBase.derivative_discontinuity!(cache.state.integrator, true)
-    return result
-end
+Base.setindex!(cache::SteadyStateODECache, value, sym) =
+    SymbolicIndexingInterface.setu(cache, sym)(cache, value)
 function SymbolicIndexingInterface.set_state!(cache::SteadyStateODECache, val, idx)
-    state_values(cache)[idx] = val
+    state = cache.state
+    u = SymbolicIndexingInterface.state_values(state.integrator)
+    y = cache.alg isa SICNM ? view(u, 1:state.setup.n) : u
+    y[idx] = val
     __after_steady_state_mutation!(cache)
     return val
 end
@@ -222,7 +226,7 @@ end
 
 function __after_steady_state_mutation!(cache::SteadyStateODECache)
     SciMLBase.derivative_discontinuity!(cache.state.integrator, true)
-    cache.alg isa SICNM && __sicnm_refresh_direction!(cache)
+    cache.direction_dirty = cache.alg isa SICNM
     return nothing
 end
 
@@ -242,28 +246,18 @@ function __sicnm_refresh_direction!(cache::SteadyStateODECache)
     state = cache.state
     setup = state.setup
     integrator = state.integrator
-    y = state_values(cache)
+    u = state_values(integrator)
+    y = view(u, 1:setup.n)
     p = parameter_values(integrator)
     _, z = __sicnm_residual_and_direction(setup.g, y, p, cache.alg.linsolve, setup.iip)
-    u = SymbolicIndexingInterface.state_values(integrator)
     copyto!(view(u, (setup.n + 1):(2 * setup.n)), z)
     return nothing
 end
 
-function __integrator_modified(integrator)
-    T = typeof(integrator)
-    if hasfield(T, :derivative_discontinuity)
-        return getfield(integrator, :derivative_discontinuity)
-    elseif hasfield(T, :u_modified)
-        return getfield(integrator, :u_modified)
-    else
-        return false
-    end
-end
-
 function __sicnm_sync_modified!(cache::SteadyStateODECache)
-    cache.alg isa SICNM || return nothing
-    __integrator_modified(cache.state.integrator) && __sicnm_refresh_direction!(cache)
+    cache.direction_dirty || return nothing
+    __sicnm_refresh_direction!(cache)
+    cache.direction_dirty = false
     return nothing
 end
 
@@ -289,6 +283,7 @@ function SciMLBase.reinit!(
         __without_keys(kwargs, :u0)...
     )
     cache.state = fresh.state
+    cache.direction_dirty = false
     return cache
 end
 

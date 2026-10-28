@@ -70,8 +70,10 @@ The cache supports symbolic state indexing (`cache[x]`, `cache[x] = value`, and
 through SymbolicIndexingInterface. State access exposes the current steady-state
 variables, including only `y` for SICNM, even when `save_idxs` selects a subset
 in the solution. Assigning through `cache[x]` or `cache.ps[a]` marks the
-integrator modified; SICNM recomputes a consistent Newton direction
-`z = -J(y)⁻¹ g(y)` from the updated state and parameters.
+integrator modified. SICNM defers recomputing its consistent Newton direction
+`z = -J(y)⁻¹ g(y)` until the next state read, access to `cache.integrator`, `step!`,
+or `solve!`. Batched symbolic assignments, including setters obtained directly from
+SymbolicIndexingInterface, complete before any residual or Jacobian evaluation.
 `SciMLBase.reinit!(cache, u0; p)` rebuilds the integrator and termination condition
 at the new operating point with the initialization options; `u0` may also be given
 as the `u0` keyword. SICNM recomputes the
