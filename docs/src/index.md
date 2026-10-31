@@ -48,10 +48,66 @@ prob = SteadyStateProblem((u, p, t) -> 1 .- u, [0.0])
 sol = solve(prob, SICNM(Rodas3d()))
 ```
 
+## Initialization and stepping
+
+`DynamicSS` and `SICNM` also support the `init`/`solve!` interface. `init(prob, alg;
+kwargs...)` accepts the same keyword arguments as `solve` and returns a cache, and
+`solve!(cache)` returns the same solution as `solve(prob, alg; kwargs...)`: its return
+code comes from the termination condition (for example `ReturnCode.Unstable` from a
+safe termination mode, or a failure when the time span ends before steady state is
+reached), and `save_idxs` selects components of the final state.
+
+For a problem that is integrated as a whole, `cache.integrator` is the underlying ODE
+integrator, and `step!(cache)` advances it. For `SICNM` that integrator solves the
+extended continuous-Newton system, so its state is `[y; z]`: the first
+`length(prob.u0)` components are the steady-state variables `y` and the rest are the
+Newton direction `z`. Its intermediate states are therefore not states of `prob`;
+`solve!` returns only `y`.
+
+The cache supports symbolic state indexing (`cache[x]`, `cache[x] = value`, and
+`getsym(cache, x)`), the parameter proxy `cache.ps` (`cache.ps[a]` and
+`cache.ps[a] = value`), `state_values(cache)`, and `parameter_values(cache)`
+through SymbolicIndexingInterface. State access exposes the current steady-state
+variables, including only `y` for SICNM, even when `save_idxs` selects a subset
+in the solution. Assigning through `cache[x]` or `cache.ps[a]` marks the
+integrator modified. SICNM defers recomputing its consistent Newton direction
+`z = -J(y)⁻¹ g(y)` until the next state read, access to `cache.integrator`, `step!`,
+or `solve!`. Batched symbolic assignments, including setters obtained directly from
+SymbolicIndexingInterface, complete before any residual or Jacobian evaluation.
+`SciMLBase.reinit!(cache, u0; p)` rebuilds the integrator and termination condition
+at the new operating point with the initialization options; `u0` may also be given
+as the `u0` keyword. SICNM recomputes the
+consistent Newton direction from `u0` and `p`. Keyword arguments override the
+initialization options; omitting `u0` or `p` uses the latest initial state or current
+parameters. Access `cache.integrator` after reinitialization to use the new integrator.
+Overrides can add or remove `save_idxs`, introduce ODE options such as `dt`, or
+change the termination mode. Reinitialization returns the same cache object and
+replaces its state after the new setup initializes successfully. If rebuilding
+throws, the cache retains its state and options from before the call.
+
+When `prob` carries an `SCCNonlinearProblem` lowering, the blocks are solved one after
+another and there is no single integrator to step. `solve!` runs that sequential solve.
+`step!`, `reinit!`, and symbolic indexing are defined only on the integrator cache
+(`SteadyStateODECache`) described above; calling any of them on the SCC lowering's
+cache (`SteadyStateSCCCache`) throws `MethodError`, since only `solve!` is supported
+on it.
+
+```julia
+using SciMLBase: SteadyStateProblem, init, solve!, step!
+using SteadyStateDiffEq
+using OrdinaryDiffEqRosenbrock: Rodas5P
+
+prob = SteadyStateProblem((u, p, t) -> 1 .- u, [0.0])
+cache = init(prob, SICNM(Rodas5P()))
+step!(cache)
+sol = solve!(cache)
+```
+
 ## API
 
 ```@docs
 SSRootfind
 DynamicSS
 SICNM
+SciMLBase.reinit!(::SteadyStateDiffEq.SteadyStateODECache)
 ```

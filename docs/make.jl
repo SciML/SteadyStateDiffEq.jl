@@ -1,4 +1,4 @@
-using Documenter, SteadyStateDiffEq
+using Documenter, SteadyStateDiffEq, SciMLBase
 
 DocMeta.setdocmeta!(
     SteadyStateDiffEq, :DocTestSetup,
